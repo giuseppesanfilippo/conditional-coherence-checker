@@ -82,6 +82,20 @@ class ExtensionResult:
     denominator_can_be_zero: bool = False
     message: str = ""
 
+@dataclass
+class ExtensionStep:
+    """One cycle of Steps 0--3 in the propagation algorithm."""
+
+    cycle: int
+    endpoint: float
+    names: tuple[str, ...]
+    constituents: list[LogicalConstituent]
+    endpoint_solvable: Optional[bool] = None
+    maxima: Optional[np.ndarray] = None
+    reduced_names: tuple[str, ...] = ()
+    action: str = ""
+    bound: Optional[float] = None
+
 
 def _parse(formula: str) -> ast.AST:
     try:
@@ -284,8 +298,12 @@ def coherent_extension_interval(
     _validate_events(events)
     _validate_events([target])
     original_events = list(events)
+    extension_steps: list[ExtensionStep] = []
+    cycle_counter = 0
 
     def _cycle(selected_indices: tuple[int, ...], endpoint: float):
+        nonlocal cycle_counter
+        cycle_counter += 1
         selected_events = [original_events[i] for i in selected_indices]
         cycle_events = selected_events + [target]
         local_indices = tuple(range(len(cycle_events)))
@@ -295,6 +313,14 @@ def coherent_extension_interval(
         constituents = _sigma_constituents(all_constituents)
         if not constituents:
             raise ValueError("The extension system has no admissible constituent.")
+
+        trace = ExtensionStep(
+            cycle=cycle_counter,
+            endpoint=endpoint,
+            names=tuple(event.name for event in cycle_events),
+            constituents=all_constituents,
+        )
+        extension_steps.append(trace)
 
         m = len(constituents)
         previous_count = len(selected_events)
@@ -349,6 +375,7 @@ def coherent_extension_interval(
             bounds=[(0.0, None)] * m,
             method="highs",
         )
+        trace.endpoint_solvable = bool(endpoint_solution.success)
         if not endpoint_solution.success:
             # Step 2: normalize on the new conditioning event and optimize
             # the mass of E_{n+1} H_{n+1}.
@@ -371,6 +398,11 @@ def coherent_extension_interval(
                 )
             value = float(
                 optimized.fun if endpoint == 0.0 else -optimized.fun
+            )
+            trace.bound = value
+            trace.action = (
+                "Step 2: endpoint is infeasible; optimize the target numerator "
+                "with target-conditioning mass normalized to one."
             )
             return value, "Step 2"
 
@@ -395,9 +427,15 @@ def coherent_extension_interval(
             if not maximum.success:
                 raise ValueError("Unable to compute the Step 3 maxima.")
             maxima.append(float(-maximum.fun))
+        trace.maxima = np.asarray(maxima, dtype=float)
 
         target_max = maxima[-1]
         if target_max > tolerance:
+            trace.bound = endpoint
+            trace.action = (
+                "Step 3: target conditioning event has positive maximum mass; "
+                "the endpoint is accepted."
+            )
             return endpoint, "Step 3"
 
         zero_previous = tuple(
@@ -406,9 +444,19 @@ def coherent_extension_interval(
             if maximum <= tolerance
         )
         if not zero_previous:
+            trace.bound = endpoint
+            trace.action = (
+                "Step 3: only the target conditioning event has zero maximum "
+                "mass; the endpoint is accepted."
+            )
             return endpoint, "Step 3"
         if zero_previous == selected_indices:
             raise ValueError("The extension algorithm did not reduce the subfamily.")
+        trace.reduced_names = tuple(original_events[i].name for i in zero_previous)
+        trace.action = (
+            "Step 3: reduce to the subfamily whose conditioning events have "
+            "zero maximum mass, then restart at Step 0."
+        )
         return _cycle(zero_previous, endpoint)
 
     lower, lower_step = _cycle(tuple(range(len(original_events))), 0.0)
@@ -425,6 +473,7 @@ def coherent_extension_interval(
             "Algorithm 1 completed: lower bound via "
             f"{lower_step}, upper bound via {upper_step}."
         ),
+        steps=extension_steps,
     )
 
 
