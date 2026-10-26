@@ -22,6 +22,7 @@ from check_conditional_coherence_logic import (  # noqa: E402
     check_coherence,
     coherent_extension_interval,
 )
+from ckc_examples import load_ckc_examples  # noqa: E402
 
 
 st.set_page_config(
@@ -32,10 +33,25 @@ st.set_page_config(
 
 
 DEFAULT_EVENTS = [
-    {"name": "A|H", "E": "A", "H": "H", "p": 0.50},
-    {"name": "not A|H", "E": "not A", "H": "H", "p": 0.50},
+    {"name": "E1|H1", "E": "A", "H": "H1", "p": 0.40},
+    {"name": "E2|H2", "E": "B", "H": "H2", "p": 0.60},
 ]
-DEFAULT_RELATIONS = ""
+DEFAULT_RELATIONS = "not (A and B)\nH1 or H2"
+
+
+def _load_available_ckc_examples() -> dict:
+    directories = (
+        OUTPUT_DIR / "examples",
+        OUTPUT_DIR.parent / "examples",
+    )
+    examples = {}
+    for directory in directories:
+        examples.update(load_ckc_examples(directory))
+    return examples
+
+
+CKC_EXAMPLES = _load_available_ckc_examples()
+
 
 def _event(name: str, E: str, H: str, p: float) -> dict:
     return {"name": name, "E": E, "H": H, "p": p}
@@ -47,7 +63,8 @@ def _event_label(E: str, H: str) -> str:
 
 
 # Exact coherent instantiations of the rules discussed in the papers.
-# Strict conclusions such as "Some S is P" use a positive illustrative value.
+# Strict conclusions such as "Some S is P" are represented by a positive
+# illustrative value (for example, 0.5).
 EXAMPLES = {
     "Custom input": {
         "description": "Enter your own conditional events and relations.",
@@ -55,7 +72,10 @@ EXAMPLES = {
         "relations": DEFAULT_RELATIONS,
     },
     "Weak contraposition (with background H)": {
-        "description": "P(B|A and H)=1, P(not B|H)=0.8, therefore P(not A|not B and H)=1.",
+        "description": (
+            "P(B|A and H)=1, P(not B|H)=0.8, therefore "
+            "P(not A|not B and H)=1."
+        ),
         "events": [
             _event("B|A and H", "B", "A and H", 1.0),
             _event("not B|H", "not B", "H", 0.8),
@@ -64,7 +84,9 @@ EXAMPLES = {
         "relations": "",
     },
     "Weak contraposition (without background H)": {
-        "description": "P(B|A)=1, P(not B)=0.8, therefore P(not A|not B)=1.",
+        "description": (
+            "P(B|A)=1, P(not B)=0.8, therefore P(not A|not B)=1."
+        ),
         "events": [
             _event("B|A", "B", "A", 1.0),
             _event("not B", "not B", "True", 0.8),
@@ -73,7 +95,9 @@ EXAMPLES = {
         "relations": "",
     },
     "Weak transitivity (Barbara)": {
-        "description": "P(P|M)=1, P(M|S)=1, P(S|S or M)=0.5, therefore P(P|S)=1.",
+        "description": (
+            "P(P|M)=1, P(M|S)=1, P(S|S or M)=0.5, therefore P(P|S)=1."
+        ),
         "events": [
             _event("P|M", "P", "M", 1.0),
             _event("M|S", "M", "S", 1.0),
@@ -84,101 +108,190 @@ EXAMPLES = {
     },
     "Figure I — Barbara (AAA)": {
         "description": "Every M is P; every S is M; therefore every S is P.",
-        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 1.0)],
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("P|S", "P", "S", 1.0),
+        ],
         "relations": "",
     },
     "Figure I — Barbari (AAI)": {
         "description": "Every M is P; every S is M; some S is P.",
-        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 1.0)],
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("P|S", "P", "S", 1.0),
+        ],
         "relations": "",
     },
     "Figure I — Darii (AII)": {
         "description": "Every M is P; some S is M; some S is P.",
-        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 0.6), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 0.8)],
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("M|S", "M", "S", 0.6),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("P|S", "P", "S", 0.8),
+        ],
         "relations": "",
     },
     "Figure I — Celarent (EAE)": {
         "description": "No M is P; every S is M; therefore no S is P.",
-        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 0.0)],
+        "events": [
+            _event("P|M", "P", "M", 0.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("P|S", "P", "S", 0.0),
+        ],
         "relations": "",
     },
     "Figure I — Celaront (EAO)": {
         "description": "No M is P; every S is M; some S is not P.",
-        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "events": [
+            _event("P|M", "P", "M", 0.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("not P|S", "not P", "S", 1.0),
+        ],
         "relations": "",
     },
     "Figure I — Ferio (EIO)": {
         "description": "No M is P; some S is M; some S is not P.",
-        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 0.6), _event("S|(S or M)", "S", "S or M", 0.5), _event("not P|S", "not P", "S", 0.7)],
+        "events": [
+            _event("P|M", "P", "M", 0.0),
+            _event("M|S", "M", "S", 0.6),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("not P|S", "not P", "S", 0.7),
+        ],
         "relations": "",
     },
     "Figure II — Camestres (AEE)": {
         "description": "Every P is M; no S is M; therefore no S is P.",
-        "events": [_event("M|P", "M", "P", 1.0), _event("M|S", "M", "S", 0.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("P|S", "P", "S", 0.0)],
+        "events": [
+            _event("M|P", "M", "P", 1.0),
+            _event("M|S", "M", "S", 0.0),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("P|S", "P", "S", 0.0),
+        ],
         "relations": "",
     },
     "Figure II — Camestrop (AEO)": {
         "description": "Every P is M; no S is M; some S is not P.",
-        "events": [_event("M|P", "M", "P", 1.0), _event("M|S", "M", "S", 0.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "events": [
+            _event("M|P", "M", "P", 1.0),
+            _event("M|S", "M", "S", 0.0),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("not P|S", "not P", "S", 1.0),
+        ],
         "relations": "",
     },
     "Figure II — Baroco (AOO)": {
         "description": "Every P is M; some S is not M; some S is not P.",
-        "events": [_event("M|P", "M", "P", 1.0), _event("not M|S", "not M", "S", 0.6), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "events": [
+            _event("M|P", "M", "P", 1.0),
+            _event("not M|S", "not M", "S", 0.6),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("not P|S", "not P", "S", 0.6),
+        ],
         "relations": "",
     },
     "Figure II — Cesare (EAE)": {
         "description": "No P is M; every S is M; therefore no S is P.",
-        "events": [_event("M|P", "M", "P", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("P|S", "P", "S", 0.0)],
+        "events": [
+            _event("M|P", "M", "P", 0.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("P|S", "P", "S", 0.0),
+        ],
         "relations": "",
     },
     "Figure II — Cesaro (EAO)": {
         "description": "No P is M; every S is M; some S is not P.",
-        "events": [_event("M|P", "M", "P", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "events": [
+            _event("M|P", "M", "P", 0.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("not P|S", "not P", "S", 1.0),
+        ],
         "relations": "",
     },
     "Figure II — Festino (EIO)": {
         "description": "No P is M; some S is M; some S is not P.",
-        "events": [_event("M|P", "M", "P", 0.0), _event("not M|S", "not M", "S", 0.6), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "events": [
+            _event("M|P", "M", "P", 0.0),
+            _event("not M|S", "not M", "S", 0.6),
+            _event("S|(S or P)", "S", "S or P", 0.5),
+            _event("not P|S", "not P", "S", 0.6),
+        ],
         "relations": "",
     },
     "Figure III — Darapti (AAI)": {
         "description": "Every M is P; every M is S; some S is P.",
-        "events": [_event("P|M", "P", "M", 1.0), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.5)],
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("S|M", "S", "M", 1.0),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("P|S", "P", "S", 0.5),
+        ],
         "relations": "",
     },
     "Figure III — Datisi (AII)": {
         "description": "Every M is P; some M is S; some S is P.",
-        "events": [_event("P|M", "P", "M", 1.0), _event("S|M", "S", "M", 0.6), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.5)],
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("S|M", "S", "M", 0.6),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("P|S", "P", "S", 0.5),
+        ],
         "relations": "",
     },
     "Figure III — Disamis (IAI)": {
         "description": "Some M is P; every M is S; some S is P.",
-        "events": [_event("P|M", "P", "M", 0.6), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.6)],
+        "events": [
+            _event("P|M", "P", "M", 0.6),
+            _event("S|M", "S", "M", 1.0),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("P|S", "P", "S", 0.6),
+        ],
         "relations": "",
     },
     "Figure III — Felapton (EAO)": {
         "description": "No M is P; every M is S; some S is not P.",
-        "events": [_event("P|M", "P", "M", 0.0), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.5)],
+        "events": [
+            _event("P|M", "P", "M", 0.0),
+            _event("S|M", "S", "M", 1.0),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("not P|S", "not P", "S", 0.5),
+        ],
         "relations": "",
     },
     "Figure III — Ferison (EIO)": {
         "description": "No M is P; some M is S; some S is not P.",
-        "events": [_event("P|M", "P", "M", 0.0), _event("not S|M", "not S", "M", 0.6), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "events": [
+            _event("P|M", "P", "M", 0.0),
+            _event("not S|M", "not S", "M", 0.6),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("not P|S", "not P", "S", 0.6),
+        ],
         "relations": "",
     },
     "Figure III — Bocardo (OAO)": {
         "description": "Some M is not P; every M is S; some S is not P.",
-        "events": [_event("not P|M", "not P", "M", 0.6), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "events": [
+            _event("not P|M", "not P", "M", 0.6),
+            _event("S|M", "S", "M", 1.0),
+            _event("M|(S or M)", "M", "S or M", 0.5),
+            _event("not P|S", "not P", "S", 0.6),
+        ],
         "relations": "",
     },
 }
 
 
-
-
-# Propagation examples from the Annals paper. The conclusion is separate
-# from the premises so that it is passed to Algorithm 1 as the target event.
+# Propagation examples from the Annals paper.  Here the conclusion is kept
+# separate from the premises so that it can be passed to Algorithm 1 as the
+# further conditional event.
 EXTENSION_EXAMPLES = {
     "Custom extension": {
         "description": "Use the current assessment and enter a new target below.",
@@ -200,12 +313,14 @@ EXTENSION_EXAMPLES = {
         "relations": "",
         "target": _event("C|A", "C", "A", 0.0),
         "formula": r"""
-        z'=\begin{cases}
+        z'=
+        \begin{cases}
         0, & t=0,\\
         \max\left\{0,xy-\dfrac{(1-t)(1-x)}{t}\right\}, & t>0,
         \end{cases}
         \qquad
-        z''=\begin{cases}
+        z''=
+        \begin{cases}
         1, & t=0,\\
         \min\left\{1,(1-x)(1-y)+\dfrac{x}{t}\right\}, & t>0.
         \end{cases}
@@ -224,7 +339,8 @@ EXTENSION_EXAMPLES = {
         "relations": "",
         "target": _event("not C|A", "not C", "A", 0.0),
         "formula": r"""
-        [z',z'']=\begin{cases}
+        [z',z'']=
+        \begin{cases}
         [0,1], & t\leq x+yt\leq 1,\\
         \left[\dfrac{x+yt-1}{tx},1\right], & x+yt>1,\\
         \left[\dfrac{t-x-yt}{t(1-x)},1\right], & x+yt<t.
@@ -244,12 +360,14 @@ EXTENSION_EXAMPLES = {
         "relations": "",
         "target": _event("C|A", "C", "A", 0.0),
         "formula": r"""
-        z'=\begin{cases}
+        z'=
+        \begin{cases}
         0, & t(x+y-1)\leq 0,\\
         \dfrac{t(x+y-1)}{1-t(1-y)}, & t(x+y-1)>0,
         \end{cases}
         \qquad
-        z''=\begin{cases}
+        z''=
+        \begin{cases}
         1, & t(y-x)\leq 0,\\
         1-\dfrac{t(y-x)}{1-t(1-y)}, & t(y-x)>0.
         \end{cases}
@@ -273,6 +391,10 @@ def _initialise_state() -> None:
     st.session_state.setdefault("relations", DEFAULT_RELATIONS)
     st.session_state.setdefault("example_choice", "Custom input")
     st.session_state.setdefault("extension_example_choice", "Custom extension")
+    st.session_state.setdefault(
+        "ckc_example_choice",
+        next(iter(CKC_EXAMPLES), ""),
+    )
     st.session_state.setdefault("extension_name", "E_new|H_new")
     st.session_state.setdefault("extension_E", "")
     st.session_state.setdefault("extension_H", "")
@@ -352,6 +474,20 @@ def _load_extension_example() -> None:
     st.session_state.extension_H = target["H"]
     st.session_state.extension_formula = example["formula"]
 
+
+def _load_ckc_example() -> None:
+    example = CKC_EXAMPLES[st.session_state.ckc_example_choice]
+    events = example.events
+    st.session_state.event_count = len(events)
+    for index, event in enumerate(events):
+        st.session_state[f"name_{index}"] = event["name"]
+        st.session_state[f"E_{index}"] = event["E"]
+        st.session_state[f"H_{index}"] = event["H"]
+        st.session_state[f"p_{index}"] = event["p"]
+    st.session_state.relations = example.relations
+    st.session_state.extension_E = example.target["E"]
+    st.session_state.extension_H = example.target["H"]
+    st.session_state.extension_formula = example.formula
 
 
 def _read_events() -> list[ConditionalFormula]:
@@ -440,7 +576,6 @@ def _show_result(result) -> None:
         st.subheader("Recursive coherence check")
         for step_number, step in enumerate(result.steps, start=1):
             _show_step(step, step_number)
-
 
 
 def _show_extension_result(result, known_formula: str = "") -> None:
@@ -561,6 +696,16 @@ st.caption(
 )
 st.button("Load selected extension example", on_click=_load_extension_example)
 
+if CKC_EXAMPLES:
+    st.subheader("Load a legacy .ckc example")
+    st.selectbox(
+        "CKC example",
+        tuple(CKC_EXAMPLES),
+        key="ckc_example_choice",
+    )
+    st.caption(CKC_EXAMPLES[st.session_state.ckc_example_choice].description)
+    st.button("Load selected .ckc example", on_click=_load_ckc_example)
+
 st.subheader("Conditional events")
 header = st.columns([1.3, 2.0, 2.0, 1.0, 0.55, 0.55, 0.8])
 for column, label in zip(
@@ -650,7 +795,6 @@ if st.button("Check coherence", type="primary"):
         _show_result(check_coherence(events, relations))
     except Exception as error:  # Streamlit should show input errors in the page.
         st.error(f"Input error: {error}")
-
 
 st.subheader("Compute a coherent extension")
 st.caption(

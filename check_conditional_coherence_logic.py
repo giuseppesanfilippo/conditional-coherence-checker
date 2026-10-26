@@ -83,6 +83,7 @@ class ExtensionResult:
     message: str = ""
     steps: Optional[list["ExtensionStep"]] = None
 
+
 @dataclass
 class ExtensionStep:
     """One cycle of Steps 0--3 in the propagation algorithm."""
@@ -285,7 +286,6 @@ def _solve_sigma(
     return result.x
 
 
-
 def coherent_extension_interval(
     events: Sequence[ConditionalFormula],
     target: ConditionalFormula,
@@ -295,9 +295,9 @@ def coherent_extension_interval(
     """Compute the coherent extension interval using Algorithm 1.
 
     This is the Step 0--3 propagation algorithm stated in the Annals paper:
-    test the endpoint (z=0 or z=1), optimize when that endpoint is impossible,
-    and recursively reduce to the indices whose conditioning events have zero
-    maximum mass.
+    test the endpoint (``z=0`` or ``z=1``), optimize when that endpoint is
+    impossible, and recursively reduce to the indices whose conditioning
+    events have zero maximum mass.
     """
     _validate_events(events)
     _validate_events([target])
@@ -334,17 +334,11 @@ def coherent_extension_interval(
         previous_rows = []
         for local in range(previous_count):
             h = np.asarray(
-                [
-                    status != "void"
-                    for status in (c.statuses[local] for c in constituents)
-                ],
+                [status != "void" for status in (c.statuses[local] for c in constituents)],
                 dtype=float,
             )
             eh = np.asarray(
-                [
-                    status == "true"
-                    for status in (c.statuses[local] for c in constituents)
-                ],
+                [status == "true" for status in (c.statuses[local] for c in constituents)],
                 dtype=float,
             )
             previous_rows.append(eh - previous_p[local] * h)
@@ -400,9 +394,7 @@ def coherent_extension_interval(
                     "The linear program for the coherent extension "
                     "could not be solved."
                 )
-            value = float(
-                optimized.fun if endpoint == 0.0 else -optimized.fun
-            )
+            value = float(optimized.fun if endpoint == 0.0 else -optimized.fun)
             trace.lambda_solution = np.asarray(optimized.x, dtype=float)
             trace.bound = value
             trace.action = (
@@ -416,10 +408,7 @@ def coherent_extension_interval(
         maxima = []
         for local in range(previous_count + 1):
             conditioning = np.asarray(
-                [
-                    status != "void"
-                    for status in (c.statuses[local] for c in constituents)
-                ],
+                [status != "void" for status in (c.statuses[local] for c in constituents)],
                 dtype=float,
             )
             maximum = linprog(
