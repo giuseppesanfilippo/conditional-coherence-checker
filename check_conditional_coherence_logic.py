@@ -81,6 +81,7 @@ class ExtensionResult:
     upper: float
     denominator_can_be_zero: bool = False
     message: str = ""
+    steps: Optional[list["ExtensionStep"]] = None
 
 @dataclass
 class ExtensionStep:
