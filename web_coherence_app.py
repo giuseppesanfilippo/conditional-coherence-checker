@@ -32,10 +32,10 @@ st.set_page_config(
 
 
 DEFAULT_EVENTS = [
-    {"name": "E1|H1", "E": "A", "H": "H1", "p": 0.40},
-    {"name": "E2|H2", "E": "B", "H": "H2", "p": 0.60},
+    {"name": "A|H", "E": "A", "H": "H", "p": 0.50},
+    {"name": "not A|H", "E": "not A", "H": "H", "p": 0.50},
 ]
-DEFAULT_RELATIONS = "not (A and B)\nH1 or H2"
+DEFAULT_RELATIONS = ""
 
 def _event(name: str, E: str, H: str, p: float) -> dict:
     return {"name": name, "E": E, "H": H, "p": p}
