@@ -41,6 +41,11 @@ def _event(name: str, E: str, H: str, p: float) -> dict:
     return {"name": name, "E": E, "H": H, "p": p}
 
 
+def _event_label(E: str, H: str) -> str:
+    """Build the read-only label used for a conditional event."""
+    return f"{E.strip() or 'True'}|{H.strip() or 'True'}"
+
+
 # Exact coherent instantiations of the rules discussed in the papers.
 # Strict conclusions such as "Some S is P" use a positive illustrative value.
 EXAMPLES = {
@@ -288,6 +293,37 @@ def _remove_event() -> None:
         st.session_state.event_count -= 1
 
 
+def _remove_event_at(index: int) -> None:
+    """Remove one event and shift all following rows up."""
+    count = st.session_state.event_count
+    if count <= 1 or not 0 <= index < count:
+        return
+    fields = ("name", "E", "H", "p")
+    for row in range(index, count - 1):
+        for field in fields:
+            st.session_state[f"{field}_{row}"] = st.session_state[
+                f"{field}_{row + 1}"
+            ]
+    for field in fields:
+        st.session_state.pop(f"{field}_{count - 1}", None)
+    st.session_state.event_count = count - 1
+
+
+def _move_event(index: int, direction: int) -> None:
+    """Move one event one row up or down."""
+    other = index + direction
+    count = st.session_state.event_count
+    if not 0 <= index < count or not 0 <= other < count:
+        return
+    for field in ("name", "E", "H", "p"):
+        key = f"{field}_{index}"
+        other_key = f"{field}_{other}"
+        st.session_state[key], st.session_state[other_key] = (
+            st.session_state[other_key],
+            st.session_state[key],
+        )
+
+
 def _load_selected_example() -> None:
     example = EXAMPLES[st.session_state.example_choice]
     events = example["events"]
@@ -321,11 +357,13 @@ def _load_extension_example() -> None:
 def _read_events() -> list[ConditionalFormula]:
     result = []
     for index in range(st.session_state.event_count):
+        event_E = st.session_state[f"E_{index}"].strip()
+        event_H = st.session_state[f"H_{index}"].strip()
         result.append(
             ConditionalFormula(
-                name=st.session_state[f"name_{index}"].strip(),
-                E=st.session_state[f"E_{index}"].strip(),
-                H=st.session_state[f"H_{index}"].strip(),
+                name=_event_label(event_E, event_H),
+                E=event_E,
+                H=event_H,
                 p=float(st.session_state[f"p_{index}"]),
             )
         )
@@ -438,14 +476,43 @@ def _show_extension_result(result, known_formula: str = "") -> None:
             else:
                 st.write("Step 1: endpoint system is not solvable.")
 
+            if step.lambda_solution is not None:
+                sigma_constituents = [
+                    constituent
+                    for constituent in step.constituents
+                    if not constituent.is_c0
+                ]
+                lambda_rows = []
+                for number, (constituent, value) in enumerate(
+                    zip(sigma_constituents, step.lambda_solution), start=1
+                ):
+                    lambda_rows.append(
+                        {
+                            "constituent": f"C{number}",
+                            "status pattern": " / ".join(constituent.statuses),
+                            "lambda": float(value),
+                        }
+                    )
+                bound_symbol = "z'" if step.endpoint == 0.0 else "z''"
+                st.write(f"Lambda vector associated with {bound_symbol}")
+                st.caption(
+                    "The displayed coefficients are the lambdas for C1, ..., Cm; "
+                    "C0 is excluded from Sigma."
+                )
+                st.dataframe(
+                    lambda_rows, hide_index=True, use_container_width=True
+                )
+
             if step.maxima is None:
                 if step.endpoint == 0.0:
                     st.latex(
-                        r"z' = \min\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda_r"
+                        r"\Lambda'=(\lambda'_1,\ldots,\lambda'_m),\qquad "
+                        r"z' = \min\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda'_r"
                     )
                 else:
                     st.latex(
-                        r"z'' = \max\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda_r"
+                        r"\Lambda''=(\lambda''_1,\ldots,\lambda''_m),\qquad "
+                        r"z'' = \max\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda''_r"
                     )
                 st.write(f"{step.action} Bound obtained: {step.bound:.6f}.")
             else:
@@ -495,28 +562,35 @@ st.caption(
 st.button("Load selected extension example", on_click=_load_extension_example)
 
 st.subheader("Conditional events")
-header = st.columns([1.3, 2.0, 2.0, 1.0])
-for column, label in zip(header, ["Name", "E", "H", "p"]):
+header = st.columns([1.3, 2.0, 2.0, 1.0, 0.55, 0.55, 0.8])
+for column, label in zip(
+    header, ["Event (E|H)", "E", "H", "p", "", "", ""]
+):
     column.markdown(f"**{label}**")
 
 st.info(
     "Suggestions: use True for a sure event and False for an impossible "
-    "event."
+    "event. Empty E or H is also interpreted as True."
 )
 
 for index in range(st.session_state.event_count):
-    columns = st.columns([1.3, 2.0, 2.0, 1.0])
-    columns[0].text_input("Name", key=f"name_{index}", label_visibility="collapsed")
+    columns = st.columns([1.3, 2.0, 2.0, 1.0, 0.55, 0.55, 0.8])
+    columns[0].text(
+        _event_label(
+            st.session_state[f"E_{index}"],
+            st.session_state[f"H_{index}"],
+        )
+    )
     columns[1].text_input(
         "E",
         key=f"E_{index}",
-        help="Use True for a sure event and False for an impossible event.",
+        help="Use True for a sure event and False for an impossible event. Empty means True.",
         label_visibility="collapsed",
     )
     columns[2].text_input(
         "H",
         key=f"H_{index}",
-        help="Use True for a sure conditioning event and False for an impossible one.",
+        help="Use True for a sure conditioning event and False for an impossible one. Empty means True.",
         label_visibility="collapsed",
     )
     columns[3].number_input(
@@ -528,10 +602,34 @@ for index in range(st.session_state.event_count):
         key=f"p_{index}",
         label_visibility="collapsed",
     )
+    columns[4].button(
+        "↑",
+        key=f"move_up_{index}",
+        help="Move this event up",
+        disabled=index == 0,
+        on_click=_move_event,
+        args=(index, -1),
+    )
+    columns[5].button(
+        "↓",
+        key=f"move_down_{index}",
+        help="Move this event down",
+        disabled=index == st.session_state.event_count - 1,
+        on_click=_move_event,
+        args=(index, 1),
+    )
+    columns[6].button(
+        "Remove",
+        key=f"remove_event_{index}",
+        help="Remove this event",
+        disabled=st.session_state.event_count <= 1,
+        on_click=_remove_event_at,
+        args=(index,),
+    )
 
 button_columns = st.columns([1, 1, 4])
 button_columns[0].button("Add event", on_click=_add_event)
-button_columns[1].button("Remove event", on_click=_remove_event)
+button_columns[1].button("Remove last event", on_click=_remove_event)
 
 st.subheader("Logical relations")
 st.text_area(
@@ -560,17 +658,20 @@ st.caption(
     "interval [z', z''] of all values that preserve coherence."
 )
 
-extension_columns = st.columns([1.3, 2.0, 2.0])
-extension_columns[0].text_input("Name", key="extension_name")
-extension_columns[1].text_input(
+extension_columns = st.columns([2.0, 2.0])
+extension_columns[0].text_input(
     "E",
     key="extension_E",
-    help="Use True for a sure event and False for an impossible event.",
+    help="Use True for a sure event and False for an impossible event. Empty means True.",
 )
-extension_columns[2].text_input(
+extension_columns[1].text_input(
     "H",
     key="extension_H",
-    help="Use True for a sure conditioning event and False for an impossible one.",
+    help="Use True for a sure conditioning event and False for an impossible one. Empty means True.",
+)
+st.caption(
+    "Target event (read-only): "
+    + _event_label(st.session_state.extension_E, st.session_state.extension_H)
 )
 
 if st.button("Compute coherent extension"):
@@ -587,10 +688,12 @@ if st.button("Compute coherent extension"):
                 "The current assessment is incoherent. Compute an extension "
                 "only after the existing assessment is coherent."
             )
+        target_E = st.session_state.extension_E.strip()
+        target_H = st.session_state.extension_H.strip()
         target = ConditionalFormula(
-            name=st.session_state.extension_name.strip() or "E_new|H_new",
-            E=st.session_state.extension_E.strip(),
-            H=st.session_state.extension_H.strip(),
+            name=_event_label(target_E, target_H),
+            E=target_E,
+            H=target_H,
             p=0.0,
         )
         extension = coherent_extension_interval(events, target, relations)
