@@ -165,6 +165,13 @@ def _logical_constituents(
     relations: Sequence[str],
     indices: Sequence[int],
 ) -> list[LogicalConstituent]:
+    """Build constituents and merge atom assignments with the same pattern.
+
+    A constituent is determined by the vector of conditional-event statuses
+    (true, false, or void).  Several primitive truth assignments can realize
+    the same vector, so they must be represented by one constituent with
+    multiple witnesses rather than by repeated constituents.
+    """
     formulas = [(_parse(events[i].E), _parse(events[i].H)) for i in indices]
     relation_trees = [_parse(r) for r in relations]
     symbol_names: set[str] = set()
