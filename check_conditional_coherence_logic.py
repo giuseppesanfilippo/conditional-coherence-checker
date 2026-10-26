@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""Coherence checking from conditional events and logical relations.
+
+The input does not contain the atoms of Omega.  Instead, it contains Boolean
+formulas for E_i and H_i and optional Boolean relations.  The program
+enumerates the truth assignments of the primitive symbols, keeps only those
+satisfying all relations, and groups them by the truth pattern of the
+conditional events.  These groups are the logical constituents.
+
+Boolean syntax:
+    and, or, not, parentheses
+
+Example:
+    ConditionalFormula("E1|H1", "A", "H1", 0.4)
+    relations=["not (A and B)", "H1 or H2"]
+
+Dependencies:
+    python -m pip install numpy scipy
+"""
+
+from __future__ import annotations
+
+import ast
+from dataclasses import dataclass
+from itertools import combinations, product
+from typing import Any, Mapping, Optional, Sequence
+
+import numpy as np
+from scipy.optimize import linprog
+
+
+@dataclass(frozen=True)
+class ConditionalFormula:
+    name: str
+    E: str
+    H: str
+    p: float
+
+
+@dataclass
+class LogicalConstituent:
+    statuses: tuple[str, ...]
+    witnesses: tuple[dict[str, bool], ...]
+    q: np.ndarray
+
+
+@dataclass
+class CoherenceResult:
+    coherent: bool
+    failed_subfamily: Optional[tuple[int, ...]] = None
+    failed_names: Optional[tuple[str, ...]] = None
+    p_sub: Optional[np.ndarray] = None
+    constituents: Optional[list[LogicalConstituent]] = None
+    phi: Optional[np.ndarray] = None
+    phi_indices: Optional[tuple[int, ...]] = None
+    i0: Optional[tuple[int, ...]] = None
+    message: str = ""
+
+
+def _parse(formula: str) -> ast.AST:
+    try:
+        tree = ast.parse(formula, mode="eval").body
+    except SyntaxError as exc:
+        raise ValueError(f"Invalid Boolean formula {formula!r}: {exc}") from exc
+    _validate(tree, formula)
+    return tree
+
+
+def _validate(node: ast.AST, formula: str) -> None:
+    allowed = (
+        ast.Expression,
+        ast.Name,
+        ast.Load,
+        ast.Constant,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.UnaryOp,
+        ast.Not,
+        ast.BinOp,
+        ast.BitAnd,
+        ast.BitOr,
+        ast.Invert,
+    )
+    if not isinstance(node, allowed):
+        raise ValueError(
+            f"Unsupported syntax in Boolean formula {formula!r}: "
+            f"{type(node).__name__}"
+        )
+    if isinstance(node, ast.Constant) and not isinstance(node.value, bool):
+        raise ValueError(f"Only True/False constants are allowed: {formula!r}")
+    for child in ast.iter_child_nodes(node):
+        _validate(child, formula)
+
+
+def _names(node: ast.AST) -> set[str]:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _eval(node: ast.AST, env: Mapping[str, bool]) -> bool:
+    if isinstance(node, ast.Name):
+        return bool(env[node.id])
+    if isinstance(node, ast.Constant):
+        return bool(node.value)
+    if isinstance(node, ast.BoolOp):
+        values = [_eval(v, env) for v in node.values]
+        if isinstance(node.op, ast.And):
+            return all(values)
+        return any(values)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
+        return not _eval(node.operand, env)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+        left, right = _eval(node.left, env), _eval(node.right, env)
+        return (left and right) if isinstance(node.op, ast.BitAnd) else (left or right)
+    raise TypeError(f"Unsupported AST node: {type(node).__name__}")
+
+
+def _logical_constituents(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str],
+    indices: Sequence[int],
+) -> list[LogicalConstituent]:
+    formulas = [(_parse(events[i].E), _parse(events[i].H)) for i in indices]
+    relation_trees = [_parse(r) for r in relations]
+    symbol_names: set[str] = set()
+    for e_tree, h_tree in formulas:
+        symbol_names |= _names(e_tree) | _names(h_tree)
+    for relation_tree in relation_trees:
+        symbol_names |= _names(relation_tree)
+
+    symbols = sorted(symbol_names)
+    groups: dict[tuple[str, ...], list[dict[str, bool]]] = {}
+    for values in product((False, True), repeat=len(symbols)):
+        env = dict(zip(symbols, values))
+        if not all(_eval(tree, env) for tree in relation_trees):
+            continue
+
+        statuses: list[str] = []
+        q: list[float] = []
+        for local, (e_tree, h_tree) in enumerate(formulas):
+            h_true = _eval(h_tree, env)
+            e_true = _eval(e_tree, env)
+            i = indices[local]
+            if not h_true:
+                statuses.append("void")
+                q.append(float(events[i].p))
+            elif e_true:
+                statuses.append("true")
+                q.append(1.0)
+            else:
+                statuses.append("false")
+                q.append(0.0)
+
+        key = tuple(statuses)
+        groups.setdefault(key, []).append(env)
+
+    constituents: list[LogicalConstituent] = []
+    for statuses, witnesses in groups.items():
+        q = []
+        for local, status in enumerate(statuses):
+            i = indices[local]
+            q.append(
+                1.0 if status == "true" else
+                0.0 if status == "false" else
+                float(events[i].p)
+            )
+        constituents.append(
+            LogicalConstituent(
+                statuses=statuses,
+                witnesses=tuple(witnesses),
+                q=np.asarray(q, dtype=float),
+            )
+        )
+    return constituents
+
+
+def _in_convex_hull(
+    p_sub: np.ndarray,
+    constituents: Sequence[LogicalConstituent],
+    tolerance: float,
+) -> bool:
+    if not constituents:
+        return False
+    Q = np.vstack([c.q for c in constituents])
+    A_eq = np.vstack([Q.T, np.ones((1, len(constituents)))])
+    b_eq = np.concatenate([p_sub, np.ones(1)])
+    result = linprog(
+        c=np.zeros(len(constituents)),
+        A_eq=A_eq,
+        b_eq=b_eq,
+        bounds=[(0.0, None)] * len(constituents),
+        method="highs",
+    )
+    if not result.success or result.x is None:
+        return False
+    return bool(np.max(np.abs(A_eq @ result.x - b_eq)) <= tolerance)
+
+
+def _solve_sigma(
+    p_sub: np.ndarray,
+    constituents: Sequence[LogicalConstituent],
+    tolerance: float,
+):
+    """Solve Sigma and return one feasible lambda, or None.
+
+    Sigma is
+
+        Q.T lambda = p,
+        sum(lambda) = 1,
+        lambda >= 0.
+
+    Here Q contains the constituent points q_k.  The solution set is the
+    set called S in the theorem.
+    """
+    if not constituents:
+        return None
+    Q = np.vstack([c.q for c in constituents])
+    A_eq = np.vstack([Q.T, np.ones((1, len(constituents)))])
+    b_eq = np.concatenate([p_sub, np.ones(1)])
+    result = linprog(
+        c=np.zeros(len(constituents)),
+        A_eq=A_eq,
+        b_eq=b_eq,
+        bounds=[(0.0, None)] * len(constituents),
+        method="highs",
+    )
+    if not result.success or result.x is None:
+        return None
+    if np.max(np.abs(A_eq @ result.x - b_eq)) > tolerance:
+        return None
+    return result.x
+
+
+def _theorem_step(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str],
+    indices: tuple[int, ...],
+    tolerance: float,
+):
+    """One recursive application of Theorem COER-P0'."""
+    constituents = _logical_constituents(events, relations, indices)
+    p_sub = np.asarray([events[i].p for i in indices], dtype=float)
+    if _solve_sigma(p_sub, constituents, tolerance) is None:
+        return CoherenceResult(
+            coherent=False,
+            failed_subfamily=indices,
+            failed_names=tuple(events[i].name for i in indices),
+            p_sub=p_sub,
+            constituents=constituents,
+            message="The system Sigma is not solvable.",
+        )
+
+    # Phi_j(lambda) is the total lambda-mass of constituents on which H_j
+    # is true.  To obtain M'_j=max_{lambda in S'} Phi_j(lambda), take
+    # S'=S and solve one LP maximization for each j.
+    Q = np.vstack([c.q for c in constituents])
+    H = np.asarray(
+        [[status != "void" for status in c.statuses] for c in constituents],
+        dtype=float,
+    )
+    A_eq = np.vstack([Q.T, np.ones((1, len(constituents)))])
+    b_eq = np.concatenate([p_sub, np.ones(1)])
+    maxima = []
+    for local_j in range(len(indices)):
+        result = linprog(
+            c=-H[:, local_j],
+            A_eq=A_eq,
+            b_eq=b_eq,
+            bounds=[(0.0, None)] * len(constituents),
+            method="highs",
+        )
+        if not result.success:
+            return CoherenceResult(
+                coherent=False,
+                failed_subfamily=indices,
+                failed_names=tuple(events[i].name for i in indices),
+                p_sub=p_sub,
+                constituents=constituents,
+                message="Unable to maximize Phi_j over the solution set of Sigma.",
+            )
+        maxima.append(float(-result.fun))
+
+    phi = np.asarray(maxima)
+    zero_local = tuple(
+        local_j for local_j, value in enumerate(phi) if value <= tolerance
+    )
+    zero_global = tuple(indices[local_j] for local_j in zero_local)
+
+    if not zero_local:
+        return CoherenceResult(
+            coherent=True,
+            constituents=constituents,
+            phi=phi,
+            phi_indices=indices,
+            i0=(),
+            message="Sigma is solvable and I0' is empty; the assessment is coherent.",
+        )
+
+    if zero_global == indices:
+        raise ValueError(
+            "The theorem does not reduce the assessment: every conditioning "
+            "event has M'_j=0. Check that the logical relations do not make "
+            "all conditioning events impossible."
+        )
+
+    # The theorem requires coherence of P0' on the indices I0'.
+    reduced = _theorem_recursive(
+        events, relations, tuple(zero_global), tolerance
+    )
+    if reduced.coherent:
+        return CoherenceResult(
+            coherent=True,
+            constituents=constituents,
+            phi=phi,
+            phi_indices=indices,
+            i0=zero_global,
+            message=(
+                "Sigma is solvable and the recursively extracted assessment "
+                "P0' is coherent."
+            ),
+        )
+    return CoherenceResult(
+        coherent=False,
+        failed_subfamily=reduced.failed_subfamily,
+        failed_names=reduced.failed_names,
+        p_sub=reduced.p_sub,
+        constituents=reduced.constituents,
+        phi=phi,
+        phi_indices=indices,
+        i0=zero_global,
+        message=(
+            "Sigma is solvable, but the assessment P0' indexed by I0' "
+            "is incoherent."
+        ),
+    )
+
+
+def _theorem_recursive(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str],
+    indices: tuple[int, ...],
+    tolerance: float,
+) -> CoherenceResult:
+    if not indices:
+        return CoherenceResult(coherent=True, message="Empty terminal subassessment.")
+    return _theorem_step(events, relations, indices, tolerance)
+
+
+def check_coherence_by_theorem(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str] = (),
+    tolerance: float = 1e-9,
+) -> CoherenceResult:
+    """Check coherence using Theorem COER-P0'.
+
+    At each recursion level the program:
+
+    1. constructs the logical constituents;
+    2. solves Sigma;
+    3. computes M'_j=max_{lambda in S} Phi_j(lambda) by linear programming;
+    4. forms I0'={j:M'_j=0};
+    5. recursively checks P0'.
+    """
+    _validate_events(events)
+    return _theorem_recursive(
+        events, relations, tuple(range(len(events))), tolerance
+    )
+
+
+def _validate_events(events: Sequence[ConditionalFormula]) -> None:
+    if not events:
+        raise ValueError("At least one conditional event is required.")
+    for event in events:
+        if not (0.0 <= event.p <= 1.0):
+            raise ValueError(f"p must lie in [0,1]: {event.name}")
+        if not event.E.strip() or not event.H.strip():
+            raise ValueError(f"E and H cannot be empty: {event.name}")
+
+
+def check_coherence(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str] = (),
+    tolerance: float = 1e-9,
+) -> CoherenceResult:
+    """Check coherence using Theorem COER-P0'.
+
+    Relations are formulas that must be true.  A relation can use any
+    primitive Boolean symbol occurring in E, H, or another relation.
+    """
+
+    return check_coherence_by_theorem(events, relations, tolerance)
+
+
+def check_coherence_by_all_subfamilies(
+    events: Sequence[ConditionalFormula],
+    relations: Sequence[str] = (),
+    tolerance: float = 1e-9,
+) -> CoherenceResult:
+    """Reference implementation checking every non-empty subfamily."""
+
+    _validate_events(events)
+
+    n = len(events)
+    for size in range(1, n + 1):
+        for indices in combinations(range(n), size):
+            constituents = _logical_constituents(events, relations, indices)
+            p_sub = np.asarray([events[i].p for i in indices], dtype=float)
+            if not _in_convex_hull(p_sub, constituents, tolerance):
+                return CoherenceResult(
+                    coherent=False,
+                    failed_subfamily=tuple(indices),
+                    failed_names=tuple(events[i].name for i in indices),
+                    p_sub=p_sub,
+                    constituents=constituents,
+                    message="The assessment is incoherent on this subfamily.",
+                )
+
+    return CoherenceResult(
+        coherent=True,
+        message="The assessment is coherent on every tested subfamily.",
+    )
+
+
+def print_result(result: CoherenceResult) -> None:
+    print(result.message)
+    if result.coherent:
+        if result.phi is not None:
+            print("M'_j values:", result.phi)
+        if result.i0 is not None:
+            print("I0':", result.i0)
+        return
+    if result.phi is not None:
+        print("M'_j values:", result.phi)
+    if result.i0 is not None:
+        print("I0':", result.i0)
+    print("Subfamily:", ", ".join(result.failed_names or ()))
+    print("Assessment:", result.p_sub)
+    print("Logical constituents:")
+    for number, constituent in enumerate(result.constituents or [], start=1):
+        print(f"  C{number}: statuses={constituent.statuses}, q={constituent.q}")
+        print(f"      witness assignment: {constituent.witnesses[0]}")
+
+
+if __name__ == "__main__":
+    # Example: no atoms are supplied.  The relations define which truth
+    # assignments are logically possible.
+    events = [
+        ConditionalFormula("E1|H1", "A", "H1", 0.40),
+        ConditionalFormula("E2|H2", "B", "H2", 0.60),
+    ]
+    relations = [
+        "not (A and B)",
+        "H1 or H2",
+    ]
+    print_result(check_coherence(events, relations))
