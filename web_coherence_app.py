@@ -441,11 +441,11 @@ def _show_extension_result(result, known_formula: str = "") -> None:
             if step.maxima is None:
                 if step.endpoint == 0.0:
                     st.latex(
-                        r"z'=\\min\\sum_{C_r\\subseteq E_{n+1}H_{n+1}}\\lambda_r"
+                        r"z' = \min\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda_r"
                     )
                 else:
                     st.latex(
-                        r"z''=\\max\\sum_{C_r\\subseteq E_{n+1}H_{n+1}}\\lambda_r"
+                        r"z'' = \max\sum_{\substack{r:\,C_r\subseteq E_{n+1}H_{n+1}}}\lambda_r"
                     )
                 st.write(f"{step.action} Bound obtained: {step.bound:.6f}.")
             else:
