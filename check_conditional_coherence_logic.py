@@ -96,9 +96,12 @@ class ExtensionStep:
     reduced_names: tuple[str, ...] = ()
     action: str = ""
     bound: Optional[float] = None
+    lambda_solution: Optional[np.ndarray] = None
 
 
 def _parse(formula: str) -> ast.AST:
+    # In the web form an empty formula denotes the sure event.
+    formula = formula.strip() or "True"
     try:
         tree = ast.parse(formula, mode="eval").body
     except SyntaxError as exc:
@@ -400,6 +403,7 @@ def coherent_extension_interval(
             value = float(
                 optimized.fun if endpoint == 0.0 else -optimized.fun
             )
+            trace.lambda_solution = np.asarray(optimized.x, dtype=float)
             trace.bound = value
             trace.action = (
                 "Step 2: endpoint is infeasible; optimize the target numerator "
@@ -432,6 +436,7 @@ def coherent_extension_interval(
 
         target_max = maxima[-1]
         if target_max > tolerance:
+            trace.lambda_solution = np.asarray(endpoint_solution.x, dtype=float)
             trace.bound = endpoint
             trace.action = (
                 "Step 3: target conditioning event has positive maximum mass; "
@@ -445,6 +450,7 @@ def coherent_extension_interval(
             if maximum <= tolerance
         )
         if not zero_previous:
+            trace.lambda_solution = np.asarray(endpoint_solution.x, dtype=float)
             trace.bound = endpoint
             trace.action = (
                 "Step 3: only the target conditioning event has zero maximum "
@@ -664,8 +670,6 @@ def _validate_events(events: Sequence[ConditionalFormula]) -> None:
     for event in events:
         if not (0.0 <= event.p <= 1.0):
             raise ValueError(f"p must lie in [0,1]: {event.name}")
-        if not event.E.strip() or not event.H.strip():
-            raise ValueError(f"E and H cannot be empty: {event.name}")
 
 
 def check_coherence(
