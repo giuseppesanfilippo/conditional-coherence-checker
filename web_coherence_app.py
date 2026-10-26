@@ -171,6 +171,88 @@ EXAMPLES = {
 
 
 
+
+# Propagation examples from the Annals paper. The conclusion is separate
+# from the premises so that it is passed to Algorithm 1 as the target event.
+EXTENSION_EXAMPLES = {
+    "Custom extension": {
+        "description": "Use the current assessment and enter a new target below.",
+        "events": DEFAULT_EVENTS,
+        "relations": DEFAULT_RELATIONS,
+        "target": _event("E_new|H_new", "", "", 0.0),
+        "formula": "",
+    },
+    "Annals — Figure I propagation": {
+        "description": (
+            "Premises (C|B, B|A, A|(A or B)); target C|A. "
+            "Theorem PROPWTFIGI."
+        ),
+        "events": [
+            _event("C|B", "C", "B", 0.60),
+            _event("B|A", "B", "A", 0.70),
+            _event("A|(A or B)", "A", "A or B", 0.80),
+        ],
+        "relations": "",
+        "target": _event("C|A", "C", "A", 0.0),
+        "formula": r"""
+        z'=\begin{cases}
+        0, & t=0,\\
+        \max\left\{0,xy-\dfrac{(1-t)(1-x)}{t}\right\}, & t>0,
+        \end{cases}
+        \qquad
+        z''=\begin{cases}
+        1, & t=0,\\
+        \min\left\{1,(1-x)(1-y)+\dfrac{x}{t}\right\}, & t>0.
+        \end{cases}
+        """,
+    },
+    "Annals — Figure II propagation": {
+        "description": (
+            "Premises (B|C, not B|A, A|(A or C)); target not C|A. "
+            "Theorem PROPF2."
+        ),
+        "events": [
+            _event("B|C", "B", "C", 0.90),
+            _event("not B|A", "not B", "A", 0.80),
+            _event("A|(A or C)", "A", "A or C", 0.80),
+        ],
+        "relations": "",
+        "target": _event("not C|A", "not C", "A", 0.0),
+        "formula": r"""
+        [z',z'']=\begin{cases}
+        [0,1], & t\leq x+yt\leq 1,\\
+        \left[\dfrac{x+yt-1}{tx},1\right], & x+yt>1,\\
+        \left[\dfrac{t-x-yt}{t(1-x)},1\right], & x+yt<t.
+        \end{cases}
+        """,
+    },
+    "Annals — Figure III propagation": {
+        "description": (
+            "Premises (C|B, A|B, B|(A or B)); target C|A. "
+            "Theorem PROPF3."
+        ),
+        "events": [
+            _event("C|B", "C", "B", 0.40),
+            _event("A|B", "A", "B", 0.90),
+            _event("B|(A or B)", "B", "A or B", 0.70),
+        ],
+        "relations": "",
+        "target": _event("C|A", "C", "A", 0.0),
+        "formula": r"""
+        z'=\begin{cases}
+        0, & t(x+y-1)\leq 0,\\
+        \dfrac{t(x+y-1)}{1-t(1-y)}, & t(x+y-1)>0,
+        \end{cases}
+        \qquad
+        z''=\begin{cases}
+        1, & t(y-x)\leq 0,\\
+        1-\dfrac{t(y-x)}{1-t(1-y)}, & t(y-x)>0.
+        \end{cases}
+        """,
+    },
+}
+
+
 def _initialise_state() -> None:
     if "event_count" not in st.session_state:
         st.session_state.event_count = len(DEFAULT_EVENTS)
@@ -185,9 +267,11 @@ def _initialise_state() -> None:
             st.session_state.setdefault(key, value)
     st.session_state.setdefault("relations", DEFAULT_RELATIONS)
     st.session_state.setdefault("example_choice", "Custom input")
+    st.session_state.setdefault("extension_example_choice", "Custom extension")
     st.session_state.setdefault("extension_name", "E_new|H_new")
     st.session_state.setdefault("extension_E", "")
     st.session_state.setdefault("extension_H", "")
+    st.session_state.setdefault("extension_formula", "")
 
 
 def _add_event() -> None:
@@ -214,6 +298,24 @@ def _load_selected_example() -> None:
         st.session_state[f"H_{index}"] = event["H"]
         st.session_state[f"p_{index}"] = event["p"]
     st.session_state.relations = example["relations"]
+
+
+def _load_extension_example() -> None:
+    example = EXTENSION_EXAMPLES[st.session_state.extension_example_choice]
+    events = example["events"]
+    st.session_state.event_count = len(events)
+    for index, event in enumerate(events):
+        st.session_state[f"name_{index}"] = event["name"]
+        st.session_state[f"E_{index}"] = event["E"]
+        st.session_state[f"H_{index}"] = event["H"]
+        st.session_state[f"p_{index}"] = event["p"]
+    st.session_state.relations = example["relations"]
+    target = example["target"]
+    st.session_state.extension_name = target["name"]
+    st.session_state.extension_E = target["E"]
+    st.session_state.extension_H = target["H"]
+    st.session_state.extension_formula = example["formula"]
+
 
 
 def _read_events() -> list[ConditionalFormula]:
@@ -302,6 +404,68 @@ def _show_result(result) -> None:
             _show_step(step, step_number)
 
 
+
+def _show_extension_result(result, known_formula: str = "") -> None:
+    st.success(
+        "Coherent extension interval: "
+        f"[{result.lower:.6f}, {result.upper:.6f}]"
+    )
+    st.write(result.message)
+    if abs(result.lower - result.upper) <= 1e-9:
+        st.info("The coherent extension is unique.")
+    elif result.lower == 0.0 and result.upper == 1.0:
+        st.info("The available assessment gives no informative bound.")
+
+    if known_formula:
+        st.subheader("Known analytical bounds for this example")
+        st.caption("Here x, y and t denote the probabilities of the premises shown above.")
+        st.latex(known_formula)
+
+    st.subheader("Extension algorithm trace")
+    st.caption(
+        "Each expander is one cycle of Algorithm 1. C0 is displayed for reference "
+        "but is excluded from the linear system."
+    )
+    for step in result.steps or []:
+        endpoint_label = "lower endpoint z=0" if step.endpoint == 0.0 else "upper endpoint z=1"
+        with st.expander(f"Cycle {step.cycle}: {endpoint_label}", expanded=False):
+            st.write("Family in Step 0: " + ", ".join(step.names))
+            st.write("Step 0: logical constituents")
+            _show_constituents(step.constituents)
+
+            if step.endpoint_solvable:
+                st.write("Step 1: endpoint system is solvable.")
+            else:
+                st.write("Step 1: endpoint system is not solvable.")
+
+            if step.maxima is None:
+                if step.endpoint == 0.0:
+                    st.latex(
+                        r"z'=\\min\\sum_{C_r\\subseteq E_{n+1}H_{n+1}}\\lambda_r"
+                    )
+                else:
+                    st.latex(
+                        r"z''=\\max\\sum_{C_r\\subseteq E_{n+1}H_{n+1}}\\lambda_r"
+                    )
+                st.write(f"{step.action} Bound obtained: {step.bound:.6f}.")
+            else:
+                st.write("Step 3: maxima M_j over the endpoint solution set")
+                rows = [
+                    {"event": name, "M_j": float(value)}
+                    for name, value in zip(step.names, step.maxima)
+                ]
+                st.dataframe(rows, hide_index=True, use_container_width=True)
+                if step.reduced_names:
+                    st.write(
+                        step.action
+                        + " Reduced subfamily: "
+                        + ", ".join(step.reduced_names)
+                        + "."
+                    )
+                else:
+                    st.write(f"{step.action} Bound: {step.bound:.6f}.")
+
+
 _initialise_state()
 
 st.title("Coherence checking for conditional events")
@@ -319,6 +483,16 @@ st.selectbox(
 st.caption(EXAMPLES[st.session_state.example_choice]["description"])
 st.button("Load selected example", on_click=_load_selected_example)
 
+st.subheader("Load an extension example")
+st.selectbox(
+    "Extension example",
+    tuple(EXTENSION_EXAMPLES),
+    key="extension_example_choice",
+)
+st.caption(
+    EXTENSION_EXAMPLES[st.session_state.extension_example_choice]["description"]
+)
+st.button("Load selected extension example", on_click=_load_extension_example)
 
 st.subheader("Conditional events")
 header = st.columns([1.3, 2.0, 2.0, 1.0])
@@ -420,14 +594,6 @@ if st.button("Compute coherent extension"):
             p=0.0,
         )
         extension = coherent_extension_interval(events, target, relations)
-        st.success(
-            "Coherent extension interval: "
-            f"[{extension.lower:.6f}, {extension.upper:.6f}]"
-        )
-        st.write(extension.message)
-        if abs(extension.lower - extension.upper) <= 1e-9:
-            st.info("The coherent extension is unique.")
-        elif extension.lower == 0.0 and extension.upper == 1.0:
-            st.info("The available assessment gives no informative bound.")
+        _show_extension_result(extension, st.session_state.extension_formula)
     except Exception as error:
         st.error(f"Extension error: {error}")
