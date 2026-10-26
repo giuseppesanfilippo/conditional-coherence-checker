@@ -82,13 +82,22 @@ def _read_events() -> list[ConditionalFormula]:
 
 def _show_constituents(constituents) -> None:
     rows = []
-    for number, constituent in enumerate(constituents, start=1):
+    regular_number = 1
+    for constituent in constituents:
+        if constituent.is_c0:
+            label = "C0"
+            used_in_sigma = "No — all-void constituent"
+        else:
+            label = f"C{regular_number}"
+            regular_number += 1
+            used_in_sigma = "Yes"
         rows.append(
             {
-                "constituent": f"C{number}",
+                "constituent": label,
                 "status pattern": " / ".join(constituent.statuses),
                 "q": tuple(float(value) for value in constituent.q),
                 "witness assignment": str(constituent.witnesses[0]),
+                "used in Σ": used_in_sigma,
             }
         )
     st.dataframe(rows, hide_index=True, use_container_width=True)
@@ -102,6 +111,8 @@ def _show_step(step, step_number: int) -> None:
             st.write("System Σ: solvable")
         else:
             st.error("System Σ: not solvable")
+        if step.message:
+            st.caption(step.message)
 
         if step.phi is not None:
             rows = []
@@ -117,6 +128,7 @@ def _show_step(step, step_number: int) -> None:
             st.caption(f"I₀' = {tuple(index + 1 for index in step.i0)}")
 
         st.write("Logical constituents")
+        st.caption("C0 is the all-void constituent and is excluded from Σ.")
         if step.constituents:
             _show_constituents(step.constituents)
         else:
