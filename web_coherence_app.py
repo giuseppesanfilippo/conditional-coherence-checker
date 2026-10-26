@@ -522,6 +522,7 @@ def _show_constituents(constituents) -> None:
                 "constituent": label,
                 "status pattern": " / ".join(constituent.statuses),
                 "q": tuple(float(value) for value in constituent.q),
+                "number of witnesses": len(constituent.witnesses),
                 "witness assignment": str(constituent.witnesses[0]),
                 "used in Σ": used_in_sigma,
             }
@@ -555,6 +556,10 @@ def _show_step(step, step_number: int) -> None:
 
         st.write("Logical constituents")
         st.caption("C0 is the all-void constituent and is excluded from Σ.")
+        st.caption(
+            "Truth assignments with the same status pattern are grouped into "
+            "one constituent; the table shows how many witnesses it has."
+        )
         if step.constituents:
             _show_constituents(step.constituents)
         else:
@@ -604,6 +609,10 @@ def _show_extension_result(result, known_formula: str = "") -> None:
         with st.expander(f"Cycle {step.cycle}: {endpoint_label}", expanded=False):
             st.write("Family in Step 0: " + ", ".join(step.names))
             st.write("Step 0: logical constituents")
+            st.caption(
+                "Equal status patterns have already been merged; the witness "
+                "count records the underlying truth assignments."
+            )
             _show_constituents(step.constituents)
 
             if step.endpoint_solvable:
