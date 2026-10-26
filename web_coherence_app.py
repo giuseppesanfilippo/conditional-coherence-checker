@@ -36,6 +36,139 @@ DEFAULT_EVENTS = [
 ]
 DEFAULT_RELATIONS = "not (A and B)\nH1 or H2"
 
+def _event(name: str, E: str, H: str, p: float) -> dict:
+    return {"name": name, "E": E, "H": H, "p": p}
+
+
+# Exact coherent instantiations of the rules discussed in the papers.
+# Strict conclusions such as "Some S is P" use a positive illustrative value.
+EXAMPLES = {
+    "Custom input": {
+        "description": "Enter your own conditional events and relations.",
+        "events": DEFAULT_EVENTS,
+        "relations": DEFAULT_RELATIONS,
+    },
+    "Weak contraposition (with background H)": {
+        "description": "P(B|A and H)=1, P(not B|H)=0.8, therefore P(not A|not B and H)=1.",
+        "events": [
+            _event("B|A and H", "B", "A and H", 1.0),
+            _event("not B|H", "not B", "H", 0.8),
+            _event("not A|not B and H", "not A", "not B and H", 1.0),
+        ],
+        "relations": "",
+    },
+    "Weak contraposition (without background H)": {
+        "description": "P(B|A)=1, P(not B)=0.8, therefore P(not A|not B)=1.",
+        "events": [
+            _event("B|A", "B", "A", 1.0),
+            _event("not B", "not B", "True", 0.8),
+            _event("not A|not B", "not A", "not B", 1.0),
+        ],
+        "relations": "",
+    },
+    "Weak transitivity (Barbara)": {
+        "description": "P(P|M)=1, P(M|S)=1, P(S|S or M)=0.5, therefore P(P|S)=1.",
+        "events": [
+            _event("P|M", "P", "M", 1.0),
+            _event("M|S", "M", "S", 1.0),
+            _event("S|(S or M)", "S", "S or M", 0.5),
+            _event("P|S", "P", "S", 1.0),
+        ],
+        "relations": "",
+    },
+    "Figure I — Barbara (AAA)": {
+        "description": "Every M is P; every S is M; therefore every S is P.",
+        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 1.0)],
+        "relations": "",
+    },
+    "Figure I — Barbari (AAI)": {
+        "description": "Every M is P; every S is M; some S is P.",
+        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 1.0)],
+        "relations": "",
+    },
+    "Figure I — Darii (AII)": {
+        "description": "Every M is P; some S is M; some S is P.",
+        "events": [_event("P|M", "P", "M", 1.0), _event("M|S", "M", "S", 0.6), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 0.8)],
+        "relations": "",
+    },
+    "Figure I — Celarent (EAE)": {
+        "description": "No M is P; every S is M; therefore no S is P.",
+        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("P|S", "P", "S", 0.0)],
+        "relations": "",
+    },
+    "Figure I — Celaront (EAO)": {
+        "description": "No M is P; every S is M; some S is not P.",
+        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or M)", "S", "S or M", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "relations": "",
+    },
+    "Figure I — Ferio (EIO)": {
+        "description": "No M is P; some S is M; some S is not P.",
+        "events": [_event("P|M", "P", "M", 0.0), _event("M|S", "M", "S", 0.6), _event("S|(S or M)", "S", "S or M", 0.5), _event("not P|S", "not P", "S", 0.7)],
+        "relations": "",
+    },
+    "Figure II — Camestres (AEE)": {
+        "description": "Every P is M; no S is M; therefore no S is P.",
+        "events": [_event("M|P", "M", "P", 1.0), _event("M|S", "M", "S", 0.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("P|S", "P", "S", 0.0)],
+        "relations": "",
+    },
+    "Figure II — Camestrop (AEO)": {
+        "description": "Every P is M; no S is M; some S is not P.",
+        "events": [_event("M|P", "M", "P", 1.0), _event("M|S", "M", "S", 0.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "relations": "",
+    },
+    "Figure II — Baroco (AOO)": {
+        "description": "Every P is M; some S is not M; some S is not P.",
+        "events": [_event("M|P", "M", "P", 1.0), _event("not M|S", "not M", "S", 0.6), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "relations": "",
+    },
+    "Figure II — Cesare (EAE)": {
+        "description": "No P is M; every S is M; therefore no S is P.",
+        "events": [_event("M|P", "M", "P", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("P|S", "P", "S", 0.0)],
+        "relations": "",
+    },
+    "Figure II — Cesaro (EAO)": {
+        "description": "No P is M; every S is M; some S is not P.",
+        "events": [_event("M|P", "M", "P", 0.0), _event("M|S", "M", "S", 1.0), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 1.0)],
+        "relations": "",
+    },
+    "Figure II — Festino (EIO)": {
+        "description": "No P is M; some S is M; some S is not P.",
+        "events": [_event("M|P", "M", "P", 0.0), _event("not M|S", "not M", "S", 0.6), _event("S|(S or P)", "S", "S or P", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "relations": "",
+    },
+    "Figure III — Darapti (AAI)": {
+        "description": "Every M is P; every M is S; some S is P.",
+        "events": [_event("P|M", "P", "M", 1.0), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.5)],
+        "relations": "",
+    },
+    "Figure III — Datisi (AII)": {
+        "description": "Every M is P; some M is S; some S is P.",
+        "events": [_event("P|M", "P", "M", 1.0), _event("S|M", "S", "M", 0.6), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.5)],
+        "relations": "",
+    },
+    "Figure III — Disamis (IAI)": {
+        "description": "Some M is P; every M is S; some S is P.",
+        "events": [_event("P|M", "P", "M", 0.6), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("P|S", "P", "S", 0.6)],
+        "relations": "",
+    },
+    "Figure III — Felapton (EAO)": {
+        "description": "No M is P; every M is S; some S is not P.",
+        "events": [_event("P|M", "P", "M", 0.0), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.5)],
+        "relations": "",
+    },
+    "Figure III — Ferison (EIO)": {
+        "description": "No M is P; some M is S; some S is not P.",
+        "events": [_event("P|M", "P", "M", 0.0), _event("not S|M", "not S", "M", 0.6), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "relations": "",
+    },
+    "Figure III — Bocardo (OAO)": {
+        "description": "Some M is not P; every M is S; some S is not P.",
+        "events": [_event("not P|M", "not P", "M", 0.6), _event("S|M", "S", "M", 1.0), _event("M|(S or M)", "M", "S or M", 0.5), _event("not P|S", "not P", "S", 0.6)],
+        "relations": "",
+    },
+}
+
+
 
 def _initialise_state() -> None:
     if "event_count" not in st.session_state:
@@ -50,6 +183,7 @@ def _initialise_state() -> None:
         for key, value in defaults.items():
             st.session_state.setdefault(key, value)
     st.session_state.setdefault("relations", DEFAULT_RELATIONS)
+    st.session_state.setdefault("example_choice", "Custom input")
 
 
 def _add_event() -> None:
@@ -64,6 +198,18 @@ def _add_event() -> None:
 def _remove_event() -> None:
     if st.session_state.event_count > 1:
         st.session_state.event_count -= 1
+
+
+def _load_selected_example() -> None:
+    example = EXAMPLES[st.session_state.example_choice]
+    events = example["events"]
+    st.session_state.event_count = len(events)
+    for index, event in enumerate(events):
+        st.session_state[f"name_{index}"] = event["name"]
+        st.session_state[f"E_{index}"] = event["E"]
+        st.session_state[f"H_{index}"] = event["H"]
+        st.session_state[f"p_{index}"] = event["p"]
+    st.session_state.relations = example["relations"]
 
 
 def _read_events() -> list[ConditionalFormula]:
@@ -159,6 +305,16 @@ st.caption(
     "Enter formulas for E and H. Primitive Boolean symbols are inferred "
     "automatically; all relations must hold."
 )
+
+st.subheader("Load an example")
+st.selectbox(
+    "Example",
+    tuple(EXAMPLES),
+    key="example_choice",
+)
+st.caption(EXAMPLES[st.session_state.example_choice]["description"])
+st.button("Load selected example", on_click=_load_selected_example)
+
 
 st.subheader("Conditional events")
 header = st.columns([1.3, 2.0, 2.0, 1.0])
