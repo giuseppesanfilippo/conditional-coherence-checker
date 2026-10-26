@@ -42,6 +42,7 @@ class LogicalConstituent:
     statuses: tuple[str, ...]
     witnesses: tuple[dict[str, bool], ...]
     q: np.ndarray
+    is_c0: bool = False
 
 
 @dataclass
@@ -184,9 +185,17 @@ def _logical_constituents(
                 statuses=statuses,
                 witnesses=tuple(witnesses),
                 q=np.asarray(q, dtype=float),
+                is_c0=all(status == "void" for status in statuses),
             )
         )
     return constituents
+
+
+def _sigma_constituents(
+    constituents: Sequence[LogicalConstituent],
+) -> list[LogicalConstituent]:
+    """Return the constituents allowed in Sigma, excluding the all-void C0."""
+    return [constituent for constituent in constituents if not constituent.is_c0]
 
 
 def _in_convex_hull(
@@ -194,6 +203,7 @@ def _in_convex_hull(
     constituents: Sequence[LogicalConstituent],
     tolerance: float,
 ) -> bool:
+    constituents = _sigma_constituents(constituents)
     if not constituents:
         return False
     Q = np.vstack([c.q for c in constituents])
@@ -227,6 +237,7 @@ def _solve_sigma(
     Here Q contains the constituent points q_k.  The solution set is the
     set called S in the theorem.
     """
+    constituents = _sigma_constituents(constituents)
     if not constituents:
         return None
     Q = np.vstack([c.q for c in constituents])
@@ -280,12 +291,13 @@ def _theorem_step(
     # Phi_j(lambda) is the total lambda-mass of constituents on which H_j
     # is true.  To obtain M'_j=max_{lambda in S'} Phi_j(lambda), take
     # S'=S and solve one LP maximization for each j.
-    Q = np.vstack([c.q for c in constituents])
+    sigma_constituents = _sigma_constituents(constituents)
+    Q = np.vstack([c.q for c in sigma_constituents])
     H = np.asarray(
-        [[status != "void" for status in c.statuses] for c in constituents],
+        [[status != "void" for status in c.statuses] for c in sigma_constituents],
         dtype=float,
     )
-    A_eq = np.vstack([Q.T, np.ones((1, len(constituents)))])
+    A_eq = np.vstack([Q.T, np.ones((1, len(sigma_constituents)))])
     b_eq = np.concatenate([p_sub, np.ones(1)])
     maxima = []
     for local_j in range(len(indices)):
@@ -293,7 +305,7 @@ def _theorem_step(
             c=-H[:, local_j],
             A_eq=A_eq,
             b_eq=b_eq,
-            bounds=[(0.0, None)] * len(constituents),
+            bounds=[(0.0, None)] * len(sigma_constituents),
             method="highs",
         )
         if not result.success:
@@ -338,10 +350,23 @@ def _theorem_step(
         )
 
     if zero_global == indices:
-        raise ValueError(
-            "The theorem does not reduce the assessment: every conditioning "
-            "event has M'_j=0. Check that the logical relations do not make "
-            "all conditioning events impossible."
+        message = (
+            "System Sigma is solvable only through solutions with zero mass "
+            "on every conditioning event (M'_j=0 for all j). Therefore no "
+            "admissible solution exists and the assessment is incoherent."
+        )
+        steps[-1].message = message
+        return CoherenceResult(
+            coherent=False,
+            failed_subfamily=indices,
+            failed_names=tuple(events[i].name for i in indices),
+            p_sub=p_sub,
+            constituents=constituents,
+            phi=phi,
+            phi_indices=indices,
+            i0=zero_global,
+            steps=steps,
+            message=message,
         )
 
     # The theorem requires coherence of P0' on the indices I0'.
