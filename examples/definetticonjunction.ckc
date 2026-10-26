@@ -1,0 +1,16 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+A
+B
+H
+K
+[Relations]
+[Cond. Probabilities]
+((A H) 0.6 0.6)
+((B K) 0.5 0.5)
+(((AND A B H K) (OR (AND A B H K) (AND (NOT A) H) (AND (NOT B) K))) 0.4 0.4)
+[New Event]
+((OR (AND A H) (AND B K)) (OR (AND A H) (AND B K) (AND (NOT A) (NOT B) H K)))
+[LowerUpper]
+(0.6470588235294119 0.8571428571428568)
+

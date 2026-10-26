@@ -1,0 +1,21 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+A
+H
+K
+[Relations]
+(IMP_CONG (AND H K))
+[Cond. Probabilities]
+((A H) 0.9 0.9)
+((K NIL) 0.7 0.7)
+(((AND (NOT H) (NOT K)) NIL) 0.2 0.2)
+(((AND (NOT A) H) NIL) 0.01 0.01)
+(((AND A H) NIL) 0.09 0.09)
+((K (OR H K)) 0.875 0.875)
+(((AND A H) (OR H K)) 0.1125 0.1125)
+(((AND (NOT A) H) (NOT K)) 1/30 1/30)
+[New Event]
+((AND A H) NIL)
+[LowerUpper]
+(0.0900000 0.0900000)
+

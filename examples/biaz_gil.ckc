@@ -1,0 +1,16 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+a1
+a2
+a3
+a4
+[Relations]
+[Cond. Probabilities]
+((a1 A4) 0.1 0.9)
+((a2 A4) 0.1 0.9)
+(((NOT a3) (AND a2 a4)) 0.1 0.9)
+((a4 A2) 0.1 0.9)
+(((AND a1 (NOT a3)) (AND a2 a4)) 0.1 0.9)
+[New Event]
+[LowerUpper]
+

@@ -1,0 +1,14 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+S
+Tbc
+[Relations]
+[Cond. Probabilities]
+((Tbc NIL) 0.00005 0.0001)
+((S Tbc) 1 1)
+((S (NOT Tbc)) 1/20 1/10)
+[New Event]
+(S NIL)
+[LowerUpper]
+(0.050047500 0.1000900)
+

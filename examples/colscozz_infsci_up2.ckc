@@ -1,0 +1,24 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+E
+F
+H
+H1
+H2
+H3
+[Relations]
+(INC H3 (AND H1 H2))
+(IDENTITY H3 (AND H H2))
+(IMP_CONG (AND E (NOT H1) H2))
+(IMP_CONG (AND F (NOT H1) H2))
+[Cond. Probabilities]
+((H2 E) 0 0.3913043478260873)
+((H1 E) 0.3600 0.562500)
+((H3 E) 0 0.3600)
+((F (AND E H1)) 0.875 0.875)
+((F (AND E H2)) 0.8333333333333334 0.8333333333333334)
+[New Event]
+(H3 (AND E F))
+[LowerUpper]
+(0 0.7142857142857167)
+

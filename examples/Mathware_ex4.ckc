@@ -1,0 +1,29 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+a1
+a2
+a3
+a4
+a5
+e1h1
+e2h2
+e3h3
+h1
+h2
+h3
+[Relations]
+(PARTITION (A1 A2 A3 A4 A5))
+(IDENTITY H1 (OR A1 (OR A2 (OR A3 A4))))
+(IDENTITY H2 (OR A1 A2))
+(IDENTITY H3 (OR A3 A4))
+(IDENTITY E1H1 A1)
+(IDENTITY E2H2 A2)
+(IDENTITY E3H3 A3)
+[Cond. Probabilities]
+((E1H1 H1) 0.75 0.75)
+((E2H2 H2) 0.25 0.25)
+[New Event]
+(e3h3 H3)
+[LowerUpper]
+(0 1)
+

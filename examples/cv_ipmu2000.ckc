@@ -1,0 +1,41 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+e1
+e2
+e3
+e4
+e5
+e6
+e7
+e8
+e9
+h3
+h4
+h5
+h6
+h7
+h8
+h9
+[Relations]
+(IMP_CONG (AND e1 e2))
+(INC e3 h3)
+(IMP_CONG (AND (OR e6 e7) (OR e4 (OR e5 (OR e8 e9)))))
+(INC (OR e6 e7) (AND h6 h7))
+(INC (OR e4 (OR e5 e8)) (AND h4 (AND h5 h8)))
+(INC e9 (AND h7 h9))
+(INC h8 (AND h5 h4))
+(IMP_CONG (AND e8 (OR e4 e5)))
+[Cond. Probabilities]
+((e1 NIL) 0.8 0.8)
+((e2 NIL) 0.2 0.2)
+((e3 H3) 0.6 0.6)
+((e4 H4) 0.01 0.01)
+((e5 H5) 0.1 0.1)
+((e6 H6) 0.37 0.37)
+((e7 H7) 0.4 0.4)
+((e9 H9) 0.35 0.35)
+[New Event]
+(E8 H8)
+[LowerUpper]
+(0 0.8999999999999997)
+

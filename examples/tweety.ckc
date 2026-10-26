@@ -1,0 +1,18 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+Birds
+Fly
+Penguings
+Tweety
+[Relations]
+[Cond. Probabilities]
+((Birds Tweety) 1 1)
+((Fly Birds) 1 1)
+((Penguings Tweety) 1 1)
+((Fly Penguings) 0 0)
+(((AND Birds Penguings) Tweety) 1 1)
+[New Event]
+(Fly Tweety)
+[LowerUpper]
+(0 1)
+

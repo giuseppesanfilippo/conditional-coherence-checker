@@ -1,0 +1,40 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+A
+C
+DA
+DF
+DH
+DM
+DM_DN
+DM_DN_DF
+DM_DN_DH
+DM_DN_DH_DF
+DN
+N
+Pat_NODULARE
+[Relations]
+(PARTITION (N A C))
+(INC DH (OR DM DN))
+(INC DA (AND (NOT DM) (NOT DF) (NOT DN)))
+(IDENTITY DM_DN (AND DM (NOT DA) (NOT DF) (NOT DH) DN))
+(IDENTITY DM_DN_DH (AND DM (NOT DA) (NOT DF) DH DN))
+(IDENTITY DM_DN_DF (AND DM (NOT DA) DF (NOT DH) DN))
+(IDENTITY DM_DN_DH_DF (AND (NOT DA) DF DH DM DN))
+(IDENTITY PAT_NODULARE (AND (NOT DA) (NOT DF) (NOT DH) (NOT DM) DN))
+(INC A DM)
+(INC C DH)
+(INC DA N)
+[Cond. Probabilities]
+((N DM) 0.02 0.02)
+((C DM_DN_DH_DF) 1. 1.)
+((A DM) 0.928571 0.98)
+((N DN) 0.181818 1.)
+((N DM_DN) 0.037037 0.897119)
+((A DM_DN_DH) 0. 0.4)
+((C DM_DN_DH) 0.6 1.)
+((A DM_DN_DF) 0.131579 1.)
+[New Event]
+(DM_DN A)
+[LowerUpper]
+

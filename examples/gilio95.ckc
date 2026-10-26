@@ -1,0 +1,28 @@
+[Check Coerence File Format - ver. 1.1]
+[Events]
+A_1
+A_2
+A_3
+B_1
+B_2
+B_3
+[Relations]
+(PARTITION ( A_1 A_2 A_3))
+(PARTITION ( B_1 B_2 B_3))
+[Cond. Probabilities]
+((A_1 B_2) 1/4 1/4)
+((A_2 B_2) 1/4 1/4)
+((A_3 B_2) 1/2 1/2)
+((A_1 B_3) 1/4 1/4)
+((A_2 B_3) 1/2 1/2)
+((A_3 B_3) 1/4 1/4)
+((B_1 A_2) 1/3 1/3)
+((B_2 A_2) 1/3 1/3)
+((B_3 A_2) 1/3 1/3)
+((B_1 A_3) 1/3 1/3)
+((B_2 A_3) 1/3 1/3)
+((B_3 A_3) 1/3 1/3)
+[New Event]
+(B_2 A_3)
+[LowerUpper]
+
