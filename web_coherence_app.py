@@ -80,61 +80,99 @@ def _read_events() -> list[ConditionalFormula]:
     return result
 
 
+def _show_constituents(constituents) -> None:
+    rows = []
+    for number, constituent in enumerate(constituents, start=1):
+        rows.append(
+            {
+                "constituent": f"C{number}",
+                "status pattern": " / ".join(constituent.statuses),
+                "q": tuple(float(value) for value in constituent.q),
+                "witness assignment": str(constituent.witnesses[0]),
+            }
+        )
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+
+
+def _show_step(step, step_number: int) -> None:
+    title = f"Step {step_number}: {', '.join(step.names)}"
+    with st.expander(title, expanded=step_number == 1):
+        st.write(f"Subassessment: {', '.join(step.names)}")
+        if step.sigma_solvable:
+            st.write("System Σ: solvable")
+        else:
+            st.error("System Σ: not solvable")
+
+        if step.phi is not None:
+            rows = []
+            for local, value in enumerate(step.phi):
+                rows.append(
+                    {
+                        "event": step.names[local],
+                        "M'_j": float(value),
+                    }
+                )
+            st.write("Theorem quantities")
+            st.dataframe(rows, hide_index=True, use_container_width=True)
+            st.caption(f"I₀' = {tuple(index + 1 for index in step.i0)}")
+
+        st.write("Logical constituents")
+        if step.constituents:
+            _show_constituents(step.constituents)
+        else:
+            st.info("No logical constituents satisfy the supplied relations.")
+
+
 def _show_result(result) -> None:
     if result.coherent:
-        st.success("L'assessment è coerente.")
+        st.success("The assessment is coherent.")
     else:
-        st.error("L'assessment è incoerente.")
+        st.error("The assessment is incoherent.")
 
     st.write(result.message)
 
     if result.failed_names:
-        st.write("Sottoassessment critico:", ", ".join(result.failed_names))
+        st.write("Critical subassessment:", ", ".join(result.failed_names))
 
-    if result.phi is not None:
-        st.subheader("Quantità del teorema")
-        rows = []
-        indices = result.phi_indices or tuple(range(len(result.phi)))
-        for local, value in enumerate(result.phi):
-            index = indices[local] if local < len(indices) else local
-            rows.append({"indice": index + 1, "M'_j": value})
-        st.dataframe(rows, hide_index=True, use_container_width=True)
-        i0 = tuple(index + 1 for index in (result.i0 or ()))
-        st.caption(f"I₀' = {i0}")
-
-    if result.constituents:
-        st.subheader("Costituenti logici")
-        rows = []
-        for number, constituent in enumerate(result.constituents, start=1):
-            rows.append(
-                {
-                    "costituente": f"C{number}",
-                    "stati": " / ".join(constituent.statuses),
-                    "q": tuple(float(value) for value in constituent.q),
-                    "valutazione testimone": str(constituent.witnesses[0]),
-                }
-            )
-        st.dataframe(rows, hide_index=True, use_container_width=True)
+    if result.steps:
+        st.subheader("Recursive coherence check")
+        for step_number, step in enumerate(result.steps, start=1):
+            _show_step(step, step_number)
 
 
 _initialise_state()
 
-st.title("Verifica della coerenza di eventi condizionati")
+st.title("Coherence checking for conditional events")
 st.caption(
-    "Inserire le formule di E e H. Gli atomi primitivi vengono individuati "
-    "automaticamente; le relazioni devono essere vere."
+    "Enter formulas for E and H. Primitive Boolean symbols are inferred "
+    "automatically; all relations must hold."
 )
 
-st.subheader("Eventi condizionati")
+st.subheader("Conditional events")
 header = st.columns([1.3, 2.0, 2.0, 1.0])
-for column, label in zip(header, ["Nome", "E", "H", "p"]):
+for column, label in zip(header, ["Name", "E", "H", "p"]):
     column.markdown(f"**{label}**")
+
+st.info(
+    "Suggestions: use True for a sure event and False for an impossible "
+    "event."
+)
 
 for index in range(st.session_state.event_count):
     columns = st.columns([1.3, 2.0, 2.0, 1.0])
-    columns[0].text_input("Nome", key=f"name_{index}", label_visibility="collapsed")
-    columns[1].text_input("E", key=f"E_{index}", label_visibility="collapsed")
-    columns[2].text_input("H", key=f"H_{index}", label_visibility="collapsed")
+    columns[0].text_input("Name", key=f"name_{index}", label_visibility="collapsed")
+    columns[1].text_input(
+        "E",
+        key=f"E_{index}",
+        help="Use True for a sure event and False for an impossible event.",
+        label_visibility="collapsed",
+    )
+    columns[2].text_input(
+        "H",
+        key=f"H_{index}",
+        help="Use True for a sure conditioning event and False for an impossible one.",
+        label_visibility="collapsed",
+    )
     columns[3].number_input(
         "p",
         min_value=0.0,
@@ -146,18 +184,18 @@ for index in range(st.session_state.event_count):
     )
 
 button_columns = st.columns([1, 1, 4])
-button_columns[0].button("Aggiungi evento", on_click=_add_event)
-button_columns[1].button("Rimuovi evento", on_click=_remove_event)
+button_columns[0].button("Add event", on_click=_add_event)
+button_columns[1].button("Remove event", on_click=_remove_event)
 
-st.subheader("Relazioni logiche")
+st.subheader("Logical relations")
 st.text_area(
-    "Una relazione per riga",
+    "One relation per line",
     key="relations",
     height=90,
-    help="Sintassi: and, or, not, parentesi. Esempio: not (A and B)",
+    help="Syntax: and, or, not, and parentheses. Example: not (A and B)",
 )
 
-if st.button("Verifica coerenza", type="primary"):
+if st.button("Check coherence", type="primary"):
     try:
         events = _read_events()
         relations = tuple(
@@ -167,4 +205,4 @@ if st.button("Verifica coerenza", type="primary"):
         )
         _show_result(check_coherence(events, relations))
     except Exception as error:  # Streamlit should show input errors in the page.
-        st.error(f"Errore nei dati inseriti: {error}")
+        st.error(f"Input error: {error}")

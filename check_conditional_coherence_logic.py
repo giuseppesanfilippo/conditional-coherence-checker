@@ -45,6 +45,20 @@ class LogicalConstituent:
 
 
 @dataclass
+class CoherenceStep:
+    """One level of the recursive COER-P0' criterion."""
+
+    indices: tuple[int, ...]
+    names: tuple[str, ...]
+    p_sub: np.ndarray
+    constituents: list[LogicalConstituent]
+    sigma_solvable: bool
+    phi: Optional[np.ndarray] = None
+    i0: tuple[int, ...] = ()
+    message: str = ""
+
+
+@dataclass
 class CoherenceResult:
     coherent: bool
     failed_subfamily: Optional[tuple[int, ...]] = None
@@ -54,6 +68,7 @@ class CoherenceResult:
     phi: Optional[np.ndarray] = None
     phi_indices: Optional[tuple[int, ...]] = None
     i0: Optional[tuple[int, ...]] = None
+    steps: Optional[list[CoherenceStep]] = None
     message: str = ""
 
 
@@ -236,17 +251,29 @@ def _theorem_step(
     relations: Sequence[str],
     indices: tuple[int, ...],
     tolerance: float,
+    steps: list[CoherenceStep],
 ):
     """One recursive application of Theorem COER-P0'."""
     constituents = _logical_constituents(events, relations, indices)
     p_sub = np.asarray([events[i].p for i in indices], dtype=float)
     if _solve_sigma(p_sub, constituents, tolerance) is None:
+        steps.append(
+            CoherenceStep(
+                indices=indices,
+                names=tuple(events[i].name for i in indices),
+                p_sub=p_sub,
+                constituents=constituents,
+                sigma_solvable=False,
+                message="The system Sigma is not solvable.",
+            )
+        )
         return CoherenceResult(
             coherent=False,
             failed_subfamily=indices,
             failed_names=tuple(events[i].name for i in indices),
             p_sub=p_sub,
             constituents=constituents,
+            steps=steps,
             message="The system Sigma is not solvable.",
         )
 
@@ -286,6 +313,19 @@ def _theorem_step(
     )
     zero_global = tuple(indices[local_j] for local_j in zero_local)
 
+    steps.append(
+        CoherenceStep(
+            indices=indices,
+            names=tuple(events[i].name for i in indices),
+            p_sub=p_sub,
+            constituents=constituents,
+            sigma_solvable=True,
+            phi=phi,
+            i0=zero_global,
+            message="System Sigma is solvable.",
+        )
+    )
+
     if not zero_local:
         return CoherenceResult(
             coherent=True,
@@ -293,6 +333,7 @@ def _theorem_step(
             phi=phi,
             phi_indices=indices,
             i0=(),
+            steps=steps,
             message="Sigma is solvable and I0' is empty; the assessment is coherent.",
         )
 
@@ -305,7 +346,7 @@ def _theorem_step(
 
     # The theorem requires coherence of P0' on the indices I0'.
     reduced = _theorem_recursive(
-        events, relations, tuple(zero_global), tolerance
+        events, relations, tuple(zero_global), tolerance, steps
     )
     if reduced.coherent:
         return CoherenceResult(
@@ -314,6 +355,7 @@ def _theorem_step(
             phi=phi,
             phi_indices=indices,
             i0=zero_global,
+            steps=steps,
             message=(
                 "Sigma is solvable and the recursively extracted assessment "
                 "P0' is coherent."
@@ -328,6 +370,7 @@ def _theorem_step(
         phi=phi,
         phi_indices=indices,
         i0=zero_global,
+        steps=steps,
         message=(
             "Sigma is solvable, but the assessment P0' indexed by I0' "
             "is incoherent."
@@ -340,10 +383,11 @@ def _theorem_recursive(
     relations: Sequence[str],
     indices: tuple[int, ...],
     tolerance: float,
+    steps: list[CoherenceStep],
 ) -> CoherenceResult:
     if not indices:
         return CoherenceResult(coherent=True, message="Empty terminal subassessment.")
-    return _theorem_step(events, relations, indices, tolerance)
+    return _theorem_step(events, relations, indices, tolerance, steps)
 
 
 def check_coherence_by_theorem(
@@ -362,8 +406,9 @@ def check_coherence_by_theorem(
     5. recursively checks P0'.
     """
     _validate_events(events)
+    steps: list[CoherenceStep] = []
     return _theorem_recursive(
-        events, relations, tuple(range(len(events))), tolerance
+        events, relations, tuple(range(len(events))), tolerance, steps
     )
 
 
