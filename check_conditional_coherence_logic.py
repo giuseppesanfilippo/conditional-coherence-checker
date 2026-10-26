@@ -73,6 +73,16 @@ class CoherenceResult:
     message: str = ""
 
 
+@dataclass
+class ExtensionResult:
+    """Coherent extension interval for one additional conditional event."""
+
+    lower: float
+    upper: float
+    denominator_can_be_zero: bool = False
+    message: str = ""
+
+
 def _parse(formula: str) -> ast.AST:
     try:
         tree = ast.parse(formula, mode="eval").body
@@ -255,6 +265,167 @@ def _solve_sigma(
     if np.max(np.abs(A_eq @ result.x - b_eq)) > tolerance:
         return None
     return result.x
+
+
+
+def coherent_extension_interval(
+    events: Sequence[ConditionalFormula],
+    target: ConditionalFormula,
+    relations: Sequence[str] = (),
+    tolerance: float = 1e-9,
+) -> ExtensionResult:
+    """Compute the coherent extension interval using Algorithm 1.
+
+    This is the Step 0--3 propagation algorithm stated in the Annals paper:
+    test the endpoint (z=0 or z=1), optimize when that endpoint is impossible,
+    and recursively reduce to the indices whose conditioning events have zero
+    maximum mass.
+    """
+    _validate_events(events)
+    _validate_events([target])
+    original_events = list(events)
+
+    def _cycle(selected_indices: tuple[int, ...], endpoint: float):
+        selected_events = [original_events[i] for i in selected_indices]
+        cycle_events = selected_events + [target]
+        local_indices = tuple(range(len(cycle_events)))
+        all_constituents = _logical_constituents(
+            cycle_events, relations, local_indices
+        )
+        constituents = _sigma_constituents(all_constituents)
+        if not constituents:
+            raise ValueError("The extension system has no admissible constituent.")
+
+        m = len(constituents)
+        previous_count = len(selected_events)
+        previous_p = np.asarray(
+            [event.p for event in selected_events], dtype=float
+        )
+        previous_rows = []
+        for local in range(previous_count):
+            h = np.asarray(
+                [
+                    status != "void"
+                    for status in (c.statuses[local] for c in constituents)
+                ],
+                dtype=float,
+            )
+            eh = np.asarray(
+                [
+                    status == "true"
+                    for status in (c.statuses[local] for c in constituents)
+                ],
+                dtype=float,
+            )
+            previous_rows.append(eh - previous_p[local] * h)
+
+        target_h = np.asarray(
+            [c.statuses[-1] != "void" for c in constituents], dtype=float
+        )
+        target_eh = np.asarray(
+            [c.statuses[-1] == "true" for c in constituents], dtype=float
+        )
+        previous_matrix = (
+            np.vstack(previous_rows)
+            if previous_rows
+            else np.empty((0, m), dtype=float)
+        )
+
+        # Step 1: test the endpoint in system (6), including normalization.
+        endpoint_matrix = np.vstack(
+            [
+                previous_matrix,
+                target_eh - endpoint * target_h,
+                np.ones((1, m)),
+            ]
+        )
+        endpoint_rhs = np.concatenate(
+            [np.zeros(previous_count + 1), np.ones(1)]
+        )
+        endpoint_solution = linprog(
+            c=np.zeros(m),
+            A_eq=endpoint_matrix,
+            b_eq=endpoint_rhs,
+            bounds=[(0.0, None)] * m,
+            method="highs",
+        )
+        if not endpoint_solution.success:
+            # Step 2: normalize on the new conditioning event and optimize
+            # the mass of E_{n+1} H_{n+1}.
+            optimization_matrix = np.vstack([previous_matrix, target_h])
+            optimization_rhs = np.concatenate(
+                [np.zeros(previous_count), np.ones(1)]
+            )
+            objective = target_eh if endpoint == 0.0 else -target_eh
+            optimized = linprog(
+                c=objective,
+                A_eq=optimization_matrix,
+                b_eq=optimization_rhs,
+                bounds=[(0.0, None)] * m,
+                method="highs",
+            )
+            if not optimized.success:
+                raise ValueError(
+                    "The linear program for the coherent extension "
+                    "could not be solved."
+                )
+            value = float(
+                optimized.fun if endpoint == 0.0 else -optimized.fun
+            )
+            return value, "Step 2"
+
+        # Step 3: maximize each conditioning-event mass over the endpoint
+        # solution set and identify I0.
+        maxima = []
+        for local in range(previous_count + 1):
+            conditioning = np.asarray(
+                [
+                    status != "void"
+                    for status in (c.statuses[local] for c in constituents)
+                ],
+                dtype=float,
+            )
+            maximum = linprog(
+                c=-conditioning,
+                A_eq=endpoint_matrix,
+                b_eq=endpoint_rhs,
+                bounds=[(0.0, None)] * m,
+                method="highs",
+            )
+            if not maximum.success:
+                raise ValueError("Unable to compute the Step 3 maxima.")
+            maxima.append(float(-maximum.fun))
+
+        target_max = maxima[-1]
+        if target_max > tolerance:
+            return endpoint, "Step 3"
+
+        zero_previous = tuple(
+            selected_indices[local]
+            for local, maximum in enumerate(maxima[:-1])
+            if maximum <= tolerance
+        )
+        if not zero_previous:
+            return endpoint, "Step 3"
+        if zero_previous == selected_indices:
+            raise ValueError("The extension algorithm did not reduce the subfamily.")
+        return _cycle(zero_previous, endpoint)
+
+    lower, lower_step = _cycle(tuple(range(len(original_events))), 0.0)
+    upper, upper_step = _cycle(tuple(range(len(original_events))), 1.0)
+    lower = float(np.clip(lower, 0.0, 1.0))
+    upper = float(np.clip(upper, 0.0, 1.0))
+    if lower > upper + tolerance:
+        raise ValueError("The computed extension interval is inconsistent.")
+    return ExtensionResult(
+        lower=lower,
+        upper=upper,
+        denominator_can_be_zero=(lower == 0.0 and upper == 1.0),
+        message=(
+            "Algorithm 1 completed: lower bound via "
+            f"{lower_step}, upper bound via {upper_step}."
+        ),
+    )
 
 
 def _theorem_step(
