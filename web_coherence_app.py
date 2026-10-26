@@ -20,6 +20,7 @@ if str(OUTPUT_DIR) not in sys.path:
 from check_conditional_coherence_logic import (  # noqa: E402
     ConditionalFormula,
     check_coherence,
+    coherent_extension_interval,
 )
 
 
@@ -184,6 +185,9 @@ def _initialise_state() -> None:
             st.session_state.setdefault(key, value)
     st.session_state.setdefault("relations", DEFAULT_RELATIONS)
     st.session_state.setdefault("example_choice", "Custom input")
+    st.session_state.setdefault("extension_name", "E_new|H_new")
+    st.session_state.setdefault("extension_E", "")
+    st.session_state.setdefault("extension_H", "")
 
 
 def _add_event() -> None:
@@ -374,3 +378,56 @@ if st.button("Check coherence", type="primary"):
         _show_result(check_coherence(events, relations))
     except Exception as error:  # Streamlit should show input errors in the page.
         st.error(f"Input error: {error}")
+
+
+st.subheader("Compute a coherent extension")
+st.caption(
+    "Enter one additional conditional event E|H. The app computes the closed "
+    "interval [z', z''] of all values that preserve coherence."
+)
+
+extension_columns = st.columns([1.3, 2.0, 2.0])
+extension_columns[0].text_input("Name", key="extension_name")
+extension_columns[1].text_input(
+    "E",
+    key="extension_E",
+    help="Use True for a sure event and False for an impossible event.",
+)
+extension_columns[2].text_input(
+    "H",
+    key="extension_H",
+    help="Use True for a sure conditioning event and False for an impossible one.",
+)
+
+if st.button("Compute coherent extension"):
+    try:
+        events = _read_events()
+        relations = tuple(
+            relation.strip()
+            for relation in st.session_state.relations.splitlines()
+            if relation.strip()
+        )
+        base_result = check_coherence(events, relations)
+        if not base_result.coherent:
+            raise ValueError(
+                "The current assessment is incoherent. Compute an extension "
+                "only after the existing assessment is coherent."
+            )
+        target = ConditionalFormula(
+            name=st.session_state.extension_name.strip() or "E_new|H_new",
+            E=st.session_state.extension_E.strip(),
+            H=st.session_state.extension_H.strip(),
+            p=0.0,
+        )
+        extension = coherent_extension_interval(events, target, relations)
+        st.success(
+            "Coherent extension interval: "
+            f"[{extension.lower:.6f}, {extension.upper:.6f}]"
+        )
+        st.write(extension.message)
+        if abs(extension.lower - extension.upper) <= 1e-9:
+            st.info("The coherent extension is unique.")
+        elif extension.lower == 0.0 and extension.upper == 1.0:
+            st.info("The available assessment gives no informative bound.")
+    except Exception as error:
+        st.error(f"Extension error: {error}")
