@@ -21,6 +21,7 @@ Dependencies:
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from itertools import combinations, product
 from typing import Any, Mapping, Optional, Sequence
@@ -111,6 +112,33 @@ def _parse(formula: str) -> ast.AST:
     return tree
 
 
+def _parse_relation(relation: str) -> ast.AST:
+    """Expand relation shorthand into a validated Boolean formula."""
+    equality = re.fullmatch(r"(.+?)\s*=\s*(True|False)\s*", relation.strip(), re.IGNORECASE)
+    if equality:
+        left = equality.group(1).strip()
+        _parse(left)
+        return _parse(left if equality.group(2).lower() == "true" else f"not ({left})")
+    try:
+        node = ast.parse(relation.strip(), mode="eval").body
+    except SyntaxError as exc:
+        raise ValueError(f"Invalid logical relation {relation!r}: {exc}") from exc
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.lower() == "partition":
+        if node.keywords or len(node.args) < 2:
+            raise ValueError("partition requires at least two events: partition(A, B, ...).")
+        members = [ast.unparse(arg) for arg in node.args]
+        for member in members:
+            _parse(member)
+        pieces = ["(" + " or ".join(f"({member})" for member in members) + ")"]
+        pieces += [f"not (({left}) and ({right}))" for i, left in enumerate(members) for right in members[i + 1:]]
+        return _parse(" and ".join(pieces))
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq) and len(node.comparators) == 1 and isinstance(node.comparators[0], ast.Constant) and type(node.comparators[0].value) is bool:
+        left = ast.unparse(node.left)
+        _parse(left)
+        return _parse(left if node.comparators[0].value else f"not ({left})")
+    return _parse(relation)
+
+
 def _validate(node: ast.AST, formula: str) -> None:
     allowed = (
         ast.Expression,
@@ -173,7 +201,7 @@ def _logical_constituents(
     multiple witnesses rather than by repeated constituents.
     """
     formulas = [(_parse(events[i].E), _parse(events[i].H)) for i in indices]
-    relation_trees = [_parse(r) for r in relations]
+    relation_trees = [_parse_relation(r) for r in relations]
     symbol_names: set[str] = set()
     for e_tree, h_tree in formulas:
         symbol_names |= _names(e_tree) | _names(h_tree)

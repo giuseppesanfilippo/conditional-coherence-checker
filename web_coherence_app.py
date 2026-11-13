@@ -8,6 +8,8 @@ Run with:
 from __future__ import annotations
 
 import sys
+import ast
+import operator
 from pathlib import Path
 
 import streamlit as st
@@ -33,10 +35,46 @@ st.set_page_config(
 
 
 DEFAULT_EVENTS = [
-    {"name": "E1|H1", "E": "A", "H": "H1", "p": 0.40},
-    {"name": "E2|H2", "E": "B", "H": "H2", "p": 0.60},
+    {"name": "E1|H1", "E": "E1", "H": "H1", "p": "0.40"},
+    {"name": "E2|H2", "E": "E2", "H": "H2", "p": "0.60"},
 ]
-DEFAULT_RELATIONS = "not (A and B)\nH1 or H2"
+DEFAULT_RELATIONS = "not (E1 and E2)\nH1 or H2"
+
+
+_ARITHMETIC_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+}
+
+
+def _evaluate_probability(value: object) -> float:
+    """Evaluate a small, safe arithmetic expression such as ``1/3``."""
+    if isinstance(value, (int, float)):
+        result = float(value)
+    else:
+        expression = str(value).strip().replace(",", ".")
+        if not expression:
+            raise ValueError("A probability value is required.")
+        tree = ast.parse(expression, mode="eval").body
+
+        def evaluate(node: ast.AST) -> float:
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return float(node.value)
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                number = evaluate(node.operand)
+                return number if isinstance(node.op, ast.UAdd) else -number
+            if isinstance(node, ast.BinOp) and type(node.op) in _ARITHMETIC_OPERATORS:
+                left, right = evaluate(node.left), evaluate(node.right)
+                return _ARITHMETIC_OPERATORS[type(node.op)](left, right)
+            raise ValueError("Use only numbers and +, -, *, /, **, parentheses.")
+
+        result = evaluate(tree)
+    if not 0.0 <= result <= 1.0:
+        raise ValueError(f"Probability must be between 0 and 1, got {result:g}.")
+    return result
 
 
 def _load_available_ckc_examples() -> dict:
@@ -384,7 +422,7 @@ def _initialise_state() -> None:
             f"name_{index}": event["name"],
             f"E_{index}": event["E"],
             f"H_{index}": event["H"],
-            f"p_{index}": event["p"],
+            f"p_{index}": str(event["p"]),
         }
         for key, value in defaults.items():
             st.session_state.setdefault(key, value)
@@ -407,7 +445,7 @@ def _add_event() -> None:
     st.session_state[f"name_{index}"] = f"E{index + 1}|H{index + 1}"
     st.session_state[f"E_{index}"] = ""
     st.session_state[f"H_{index}"] = ""
-    st.session_state[f"p_{index}"] = 0.5
+    st.session_state[f"p_{index}"] = "0.5"
 
 
 def _remove_event() -> None:
@@ -454,7 +492,7 @@ def _load_selected_example() -> None:
         st.session_state[f"name_{index}"] = event["name"]
         st.session_state[f"E_{index}"] = event["E"]
         st.session_state[f"H_{index}"] = event["H"]
-        st.session_state[f"p_{index}"] = event["p"]
+        st.session_state[f"p_{index}"] = str(event["p"])
     st.session_state.relations = example["relations"]
 
 
@@ -466,7 +504,7 @@ def _load_extension_example() -> None:
         st.session_state[f"name_{index}"] = event["name"]
         st.session_state[f"E_{index}"] = event["E"]
         st.session_state[f"H_{index}"] = event["H"]
-        st.session_state[f"p_{index}"] = event["p"]
+        st.session_state[f"p_{index}"] = str(event["p"])
     st.session_state.relations = example["relations"]
     target = example["target"]
     st.session_state.extension_name = target["name"]
@@ -483,7 +521,7 @@ def _load_ckc_example() -> None:
         st.session_state[f"name_{index}"] = event["name"]
         st.session_state[f"E_{index}"] = event["E"]
         st.session_state[f"H_{index}"] = event["H"]
-        st.session_state[f"p_{index}"] = event["p"]
+        st.session_state[f"p_{index}"] = str(event["p"])
     st.session_state.relations = example.relations
     st.session_state.extension_E = example.target["E"]
     st.session_state.extension_H = example.target["H"]
@@ -500,7 +538,7 @@ def _read_events() -> list[ConditionalFormula]:
                 name=_event_label(event_E, event_H),
                 E=event_E,
                 H=event_H,
-                p=float(st.session_state[f"p_{index}"]),
+                p=_evaluate_probability(st.session_state[f"p_{index}"]),
             )
         )
     return result
@@ -716,6 +754,7 @@ if CKC_EXAMPLES:
     st.button("Load selected .ckc example", on_click=_load_ckc_example)
 
 st.subheader("Conditional events")
+st.caption("Probability p: enter a number or expression such as 1/3 or 2*(1/4).")
 header = st.columns([1.3, 2.0, 2.0, 1.0, 0.55, 0.55, 0.8])
 for column, label in zip(
     header, ["Event (E|H)", "E", "H", "p", "", "", ""]
@@ -747,14 +786,11 @@ for index in range(st.session_state.event_count):
         help="Use True for a sure conditioning event and False for an impossible one. Empty means True.",
         label_visibility="collapsed",
     )
-    columns[3].number_input(
+    columns[3].text_input(
         "p",
-        min_value=0.0,
-        max_value=1.0,
-        step=0.01,
-        format="%.6f",
+        help="Enter a number or expression such as 1/3 or 2*(1/4).",
         key=f"p_{index}",
-        label_visibility="collapsed",
+        label_visibility="visible",
     )
     columns[4].button(
         "↑",
@@ -785,12 +821,21 @@ button_columns = st.columns([1, 1, 4])
 button_columns[0].button("Add event", on_click=_add_event)
 button_columns[1].button("Remove last event", on_click=_remove_event)
 
+st.markdown(
+    """**Examples of logical relations**
+
+1. Incompatibility of A and B: `A and B = False`
+2. Incompatibility of not (A) or not (B): `not (A) or not (B) = False`
+3. A implies B: `A and not (B) = False`
+4. Partition of A, B and C: `partition(A, B, C)` — exactly one event occurs.
+"""
+)
 st.subheader("Logical relations")
 st.text_area(
     "One relation per line",
     key="relations",
     height=90,
-    help="Syntax: and, or, not, and parentheses. Example: not (A and B)",
+    help="Use and, or, not, parentheses, = True/False, or partition(A, B, C). One relation per line.",
 )
 
 if st.button("Check coherence", type="primary"):
