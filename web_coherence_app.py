@@ -546,25 +546,72 @@ def _read_events() -> list[ConditionalFormula]:
 
 
 def _boolean_latex(formula: str) -> str:
-    """Render the supported Boolean event syntax as LaTeX."""
+    """Render a Boolean event, omitting unnecessary outer parentheses."""
     tree = ast.parse(formula.strip() or "True", mode="eval").body
 
-    def render(node: ast.AST) -> str:
+    def render(node: ast.AST, parent_precedence: int = 0) -> str:
         if isinstance(node, ast.Name):
             return node.id.replace("_", r"\_")
         if isinstance(node, ast.Constant) and type(node.value) is bool:
             return r"\Omega" if node.value else r"\varnothing"
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
+            if isinstance(node.operand, ast.UnaryOp) and isinstance(node.operand.op, (ast.Not, ast.Invert)):
+                return render(node.operand.operand, parent_precedence)
             return rf"\overline{{{render(node.operand)}}}"
         if isinstance(node, ast.BoolOp):
-            symbol = r"\land" if isinstance(node.op, ast.And) else r"\lor"
-            return "(" + f" {symbol} ".join(render(value) for value in node.values) + ")"
-        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
-            symbol = r"\land" if isinstance(node.op, ast.BitAnd) else r"\lor"
-            return f"({render(node.left)} {symbol} {render(node.right)})"
-        raise ValueError(f"Unsupported Boolean formula: {formula}")
+            precedence = 2 if isinstance(node.op, ast.And) else 1
+            symbol = r"\land" if precedence == 2 else r"\lor"
+            result = f" {symbol} ".join(render(value, precedence) for value in node.values)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+            precedence = 2 if isinstance(node.op, ast.BitAnd) else 1
+            symbol = r"\land" if precedence == 2 else r"\lor"
+            result = f"{render(node.left, precedence)} {symbol} {render(node.right, precedence)}"
+        else:
+            raise ValueError(f"Unsupported Boolean formula: {formula}")
+        return f"({result})" if precedence < parent_precedence else result
 
     return render(tree)
+
+
+def _constituent_latex(constituent, events) -> str:
+    """Collect and deduplicate the conjunction defining a constituent."""
+    factors = []
+
+    def add_factor(formula: str, negated: bool) -> None:
+        node = ast.parse(formula.strip() or "True", mode="eval").body
+        while isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
+            negated = not negated
+            node = node.operand
+        factors.append((_boolean_latex(ast.unparse(node)), negated))
+
+    for event, status in zip(events, constituent.statuses):
+        if status == "void":
+            add_factor(event.H, True)
+        else:
+            add_factor(event.H, False)
+            add_factor(event.E, status == "false")
+
+    unique = []
+    for expression, negated in factors:
+        if expression == r"\Omega":
+            if negated:
+                return r"\varnothing"
+            continue
+        if expression == r"\varnothing":
+            if not negated:
+                return r"\varnothing"
+            continue
+        factor = (expression, negated)
+        if (expression, not negated) in unique:
+            return r"\varnothing"
+        if factor not in unique:
+            unique.append(factor)
+
+    return r" \land ".join(
+        rf"\overline{{{expression}}}" if negated else
+        f"({expression})" if r"\lor" in expression else expression
+        for expression, negated in unique
+    ) or r"\Omega"
 
 
 def _show_constituents(constituents, events) -> None:
@@ -598,16 +645,7 @@ def _show_constituents(constituents, events) -> None:
         else:
             label = str(regular_number)
             regular_number += 1
-        terms = []
-        for event, status in zip(events, constituent.statuses):
-            e, h = _boolean_latex(event.E), _boolean_latex(event.H)
-            if status == "true":
-                terms.append(e if h == r"\Omega" else rf"({e}\land {h})")
-            elif status == "false":
-                terms.append(rf"\overline{{{e}}}" if h == r"\Omega" else rf"(\overline{{{e}}}\land {h})")
-            else:
-                terms.append(rf"\overline{{{h}}}")
-        st.latex(rf"C_{{{label}}} = " + (r" \land ".join(terms) if terms else r"\Omega"))
+        st.latex(rf"C_{{{label}}} = " + _constituent_latex(constituent, events))
 
 
 def _show_step(step, step_number: int, events) -> None:
