@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import ast
 import operator
+import re
 from pathlib import Path
 
 import streamlit as st
@@ -544,7 +545,29 @@ def _read_events() -> list[ConditionalFormula]:
     return result
 
 
-def _show_constituents(constituents) -> None:
+def _boolean_latex(formula: str) -> str:
+    """Render the supported Boolean event syntax as LaTeX."""
+    tree = ast.parse(formula.strip() or "True", mode="eval").body
+
+    def render(node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return node.id.replace("_", r"\_")
+        if isinstance(node, ast.Constant) and type(node.value) is bool:
+            return r"\Omega" if node.value else r"\varnothing"
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
+            return rf"\overline{{{render(node.operand)}}}"
+        if isinstance(node, ast.BoolOp):
+            symbol = r"\land" if isinstance(node.op, ast.And) else r"\lor"
+            return "(" + f" {symbol} ".join(render(value) for value in node.values) + ")"
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+            symbol = r"\land" if isinstance(node.op, ast.BitAnd) else r"\lor"
+            return f"({render(node.left)} {symbol} {render(node.right)})"
+        raise ValueError(f"Unsupported Boolean formula: {formula}")
+
+    return render(tree)
+
+
+def _show_constituents(constituents, events) -> None:
     rows = []
     regular_number = 1
     for constituent in constituents:
@@ -566,9 +589,28 @@ def _show_constituents(constituents) -> None:
             }
         )
     st.dataframe(rows, hide_index=True, use_container_width=True)
+    st.write("Constituents in LaTeX")
+    st.caption("For E|H: true means E ∧ H, false means ¬E ∧ H, and void means ¬H. C0 is the all-void constituent.")
+    regular_number = 1
+    for constituent in constituents:
+        if constituent.is_c0:
+            label = "0"
+        else:
+            label = str(regular_number)
+            regular_number += 1
+        terms = []
+        for event, status in zip(events, constituent.statuses):
+            e, h = _boolean_latex(event.E), _boolean_latex(event.H)
+            if status == "true":
+                terms.append(e if h == r"\Omega" else rf"({e}\land {h})")
+            elif status == "false":
+                terms.append(rf"\overline{{{e}}}" if h == r"\Omega" else rf"(\overline{{{e}}}\land {h})")
+            else:
+                terms.append(rf"\overline{{{h}}}")
+        st.latex(rf"C_{{{label}}} = " + (r" \land ".join(terms) if terms else r"\Omega"))
 
 
-def _show_step(step, step_number: int) -> None:
+def _show_step(step, step_number: int, events) -> None:
     title = f"Step {step_number}: {', '.join(step.names)}"
     with st.expander(title, expanded=step_number == 1):
         st.write(f"Subassessment: {', '.join(step.names)}")
@@ -599,12 +641,12 @@ def _show_step(step, step_number: int) -> None:
             "one constituent; the table shows how many witnesses it has."
         )
         if step.constituents:
-            _show_constituents(step.constituents)
+            _show_constituents(step.constituents, [events[i] for i in step.indices])
         else:
             st.info("No logical constituents satisfy the supplied relations.")
 
 
-def _show_result(result) -> None:
+def _show_result(result, events) -> None:
     if result.coherent:
         st.success("The assessment is coherent.")
     else:
@@ -618,10 +660,10 @@ def _show_result(result) -> None:
     if result.steps:
         st.subheader("Recursive coherence check")
         for step_number, step in enumerate(result.steps, start=1):
-            _show_step(step, step_number)
+            _show_step(step, step_number, events)
 
 
-def _show_extension_result(result, known_formula: str = "") -> None:
+def _show_extension_result(result, events, target, known_formula: str = "") -> None:
     st.success(
         "Coherent extension interval: "
         f"[{result.lower:.6f}, {result.upper:.6f}]"
@@ -651,7 +693,8 @@ def _show_extension_result(result, known_formula: str = "") -> None:
                 "Equal status patterns have already been merged; the witness "
                 "count records the underlying truth assignments."
             )
-            _show_constituents(step.constituents)
+            by_name = {event.name: event for event in [*events, target]}
+            _show_constituents(step.constituents, [by_name[name] for name in step.names])
 
             if step.endpoint_solvable:
                 st.write("Step 1: endpoint system is solvable.")
@@ -846,7 +889,7 @@ if st.button("Check coherence", type="primary"):
             for relation in st.session_state.relations.splitlines()
             if relation.strip()
         )
-        _show_result(check_coherence(events, relations))
+        _show_result(check_coherence(events, relations), events)
     except Exception as error:  # Streamlit should show input errors in the page.
         st.error(f"Input error: {error}")
 
@@ -895,6 +938,6 @@ if st.button("Compute coherent extension"):
             p=0.0,
         )
         extension = coherent_extension_interval(events, target, relations)
-        _show_extension_result(extension, st.session_state.extension_formula)
+        _show_extension_result(extension, events, target, st.session_state.extension_formula)
     except Exception as error:
         st.error(f"Extension error: {error}")
