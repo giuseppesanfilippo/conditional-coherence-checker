@@ -545,73 +545,165 @@ def _read_events() -> list[ConditionalFormula]:
     return result
 
 
-def _boolean_latex(formula: str) -> str:
-    """Render a Boolean event, omitting unnecessary outer parentheses."""
-    tree = ast.parse(formula.strip() or "True", mode="eval").body
-
-    def render(node: ast.AST, parent_precedence: int = 0) -> str:
+def _boolean_expression(formula: str):
+    """Parse supported Boolean syntax into a small immutable expression tree."""
+    def convert(node):
         if isinstance(node, ast.Name):
-            return node.id.replace("_", r"\_")
+            return ("atom", node.id)
         if isinstance(node, ast.Constant) and type(node.value) is bool:
-            return r"\Omega" if node.value else r"\varnothing"
+            return ("const", node.value)
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
-            if isinstance(node.operand, ast.UnaryOp) and isinstance(node.operand.op, (ast.Not, ast.Invert)):
-                return render(node.operand.operand, parent_precedence)
-            return rf"\overline{{{render(node.operand)}}}"
-        if isinstance(node, ast.BoolOp):
-            precedence = 2 if isinstance(node.op, ast.And) else 1
-            symbol = r"\land" if precedence == 2 else r"\lor"
-            result = f" {symbol} ".join(render(value, precedence) for value in node.values)
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
-            precedence = 2 if isinstance(node.op, ast.BitAnd) else 1
-            symbol = r"\land" if precedence == 2 else r"\lor"
-            result = f"{render(node.left, precedence)} {symbol} {render(node.right, precedence)}"
-        else:
-            raise ValueError(f"Unsupported Boolean formula: {formula}")
-        return f"({result})" if precedence < parent_precedence else result
+            return ("not", convert(node.operand))
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+            return ("and" if isinstance(node.op, ast.And) else "or", tuple(map(convert, node.values)))
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+            return ("and" if isinstance(node.op, ast.BitAnd) else "or", (convert(node.left), convert(node.right)))
+        raise ValueError(f"Unsupported Boolean formula: {formula}")
 
-    return render(tree)
+    return convert(ast.parse(formula.strip() or "True", mode="eval").body)
+
+
+def _simplify_boolean(expression):
+    """Apply Boolean identities used in the displayed constituent formulas."""
+    kind = expression[0]
+    if kind in ("atom", "const"):
+        return expression
+    if kind == "not":
+        child = _simplify_boolean(expression[1])
+        if child[0] == "const":
+            return ("const", not child[1])
+        if child[0] == "not":
+            return child[1]
+        if child[0] in ("and", "or"):
+            opposite = "or" if child[0] == "and" else "and"
+            return _simplify_boolean((opposite, tuple(("not", item) for item in child[1])))
+        return ("not", child)
+
+    identity, annihilator = (True, False) if kind == "and" else (False, True)
+    items = []
+    for child in expression[1]:
+        child = _simplify_boolean(child)
+        if child == ("const", annihilator):
+            return child
+        if child == ("const", identity):
+            continue
+        candidates = child[1] if child[0] == kind else (child,)
+        for candidate in candidates:
+            opposite = candidate[1] if candidate[0] == "not" else ("not", candidate)
+            if opposite in items:
+                return ("const", annihilator)
+            if candidate not in items:
+                items.append(candidate)
+
+    # Absorption: X and (X or Y) = X; dual rule for or.
+    other = "or" if kind == "and" else "and"
+    items = [item for item in items if not (
+        item[0] == other and any(part in items for part in item[1])
+    )]
+    if not items:
+        return ("const", identity)
+    return items[0] if len(items) == 1 else (kind, tuple(items))
+
+
+def _render_boolean_latex(expression, parent_precedence: int = 0) -> str:
+    kind = expression[0]
+    if kind == "atom":
+        return expression[1].replace("_", r"\_")
+    if kind == "const":
+        return r"\Omega" if expression[1] else r"\varnothing"
+    if kind == "not":
+        return rf"\overline{{{_render_boolean_latex(expression[1])}}}"
+    precedence = 2 if kind == "and" else 1
+    symbol = r" \land " if kind == "and" else r" \lor "
+    result = symbol.join(_render_boolean_latex(item, precedence) for item in expression[1])
+    return f"({result})" if precedence < parent_precedence else result
+
+
+def _boolean_latex(formula: str) -> str:
+    return _render_boolean_latex(_simplify_boolean(_boolean_expression(formula)))
 
 
 def _constituent_latex(constituent, events) -> str:
-    """Collect and deduplicate the conjunction defining a constituent."""
-    factors = []
-
-    def add_factor(formula: str, negated: bool) -> None:
-        node = ast.parse(formula.strip() or "True", mode="eval").body
-        while isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
-            negated = not negated
-            node = node.operand
-        factors.append((_boolean_latex(ast.unparse(node)), negated))
-
+    """Simplify the entire Boolean conjunction defining a constituent."""
+    terms = []
     for event, status in zip(events, constituent.statuses):
+        h = _boolean_expression(event.H)
         if status == "void":
-            add_factor(event.H, True)
+            terms.append(("not", h))
         else:
-            add_factor(event.H, False)
-            add_factor(event.E, status == "false")
+            terms.append(h)
+            e = _boolean_expression(event.E)
+            terms.append(("not", e) if status == "false" else e)
+    return _render_boolean_latex(_simplify_boolean(("and", tuple(terms))))
 
-    unique = []
-    for expression, negated in factors:
-        if expression == r"\Omega":
-            if negated:
-                return r"\varnothing"
-            continue
-        if expression == r"\varnothing":
-            if not negated:
-                return r"\varnothing"
-            continue
-        factor = (expression, negated)
-        if (expression, not negated) in unique:
-            return r"\varnothing"
-        if factor not in unique:
-            unique.append(factor)
 
-    return r" \land ".join(
-        rf"\overline{{{expression}}}" if negated else
-        f"({expression})" if r"\lor" in expression else expression
-        for expression, negated in unique
-    ) or r"\Omega"
+def _minimal_constituent_latex(constituent, constituents, events) -> str:
+    """Minimize against all allowed assignments; excluded worlds are don't-cares."""
+    witnesses = [witness for group in constituents for witness in group.witnesses]
+    if not witnesses:
+        return _constituent_latex(constituent, events)
+    symbols = sorted(witnesses[0])
+    targets = list(constituent.witnesses)
+    # Keep the exact search bounded for examples with many primitive events.
+    if len(symbols) > 10 or len(targets) > 16:
+        return _constituent_latex(constituent, events)
+
+    def bits(witness):
+        return sum(1 << index for index, symbol in enumerate(symbols) if witness[symbol])
+
+    target_bits = [bits(witness) for witness in targets]
+    other_bits = [bits(witness) for group in constituents if group is not constituent for witness in group.witnesses]
+    all_bits = (1 << len(symbols)) - 1
+    candidates = {}
+    for value in target_bits:
+        mask = all_bits
+        while True:
+            chosen = value & mask
+            if all((other & mask) != chosen for other in other_bits):
+                coverage = sum(1 << index for index, target in enumerate(target_bits) if (target & mask) == chosen)
+                key = (mask, chosen)
+                candidates[key] = coverage
+            if mask == 0:
+                break
+            mask = (mask - 1) & all_bits
+
+    # Keep only prime cubes: if one literal can be dropped, the cube is redundant.
+    options = []
+    for (mask, chosen), coverage in candidates.items():
+        if any(
+            (mask & ~(1 << bit), chosen & ~(1 << bit)) in candidates
+            for bit in range(len(symbols)) if mask & (1 << bit)
+        ):
+            continue
+        options.append((mask.bit_count(), mask, chosen, coverage))
+    options.sort(key=lambda option: (option[0], -option[3].bit_count(), option[1], option[2]))
+
+    # Dynamic programming finds the cover with the fewest displayed literals.
+    best = {0: (0, ())}
+    for covered in range(1 << len(targets)):
+        if covered not in best:
+            continue
+        cost, selected = best[covered]
+        for index, (literal_count, _, _, coverage) in enumerate(options):
+            combined = covered | coverage
+            if combined == covered:
+                continue
+            proposal = (cost + literal_count, selected + (index,))
+            previous = best.get(combined)
+            if previous is None or (proposal[0], len(proposal[1])) < (previous[0], len(previous[1])):
+                best[combined] = proposal
+
+    selected = best[(1 << len(targets)) - 1][1]
+    terms = []
+    for index in selected:
+        _, mask, chosen, _ = options[index]
+        factors = []
+        for bit, symbol in enumerate(symbols):
+            if mask & (1 << bit):
+                atom = ("atom", symbol)
+                factors.append(atom if chosen & (1 << bit) else ("not", atom))
+        terms.append(("and", tuple(factors)))
+    return _render_boolean_latex(_simplify_boolean(("or", tuple(terms))))
 
 
 def _show_constituents(constituents, events) -> None:
@@ -637,7 +729,7 @@ def _show_constituents(constituents, events) -> None:
         )
     st.dataframe(rows, hide_index=True, use_container_width=True)
     st.write("Constituents in LaTeX")
-    st.caption("For E|H: true means E ∧ H, false means ¬E ∧ H, and void means ¬H. C0 is the all-void constituent.")
+    st.caption("For E|H: true means E ∧ H, false means ¬E ∧ H, and void means ¬H. Formulas are simplified using the supplied logical relations; C0 is the all-void constituent.")
     regular_number = 1
     for constituent in constituents:
         if constituent.is_c0:
@@ -645,7 +737,7 @@ def _show_constituents(constituents, events) -> None:
         else:
             label = str(regular_number)
             regular_number += 1
-        st.latex(rf"C_{{{label}}} = " + _constituent_latex(constituent, events))
+        st.latex(rf"C_{{{label}}} = " + _minimal_constituent_latex(constituent, constituents, events))
 
 
 def _show_step(step, step_number: int, events) -> None:
